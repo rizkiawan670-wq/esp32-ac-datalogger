@@ -11,23 +11,52 @@ import {
   Droplets, 
   ShieldCheck, 
   Clock, 
-  Wind
+  Wind,
+  Gauge,
+  Activity,
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateDewPoint } from '../utils/analytics';
 
 export default function StatusCards() {
-  const { latestReading, settings, devices, selectedDeviceId, isDeviceOnline } = useApp();
+  const { 
+    latestReading, 
+    latestRpmReading,
+    activeCompressorProfile,
+    settings, 
+    devices, 
+    selectedDeviceId, 
+    isDeviceOnline 
+  } = useApp();
 
   // Tegangan selalu dianggap valid (kalibrasi dilakukan di firmware)
   const isVoltageValid = true;
 
-  // Ekstrak data pembacaan
+  // Ekstrak data pembacaan AC
   const voltage = latestReading?.voltage_v !== undefined ? Number(latestReading.voltage_v) : null;
-  const isVoltageValid2 = true; // voltage always valid
   const temperature = latestReading?.temperature_c !== undefined ? Number(latestReading.temperature_c) : null;
   const humidity = latestReading?.humidity_rh !== undefined ? Number(latestReading.humidity_rh) : null;
   const dewPoint = calculateDewPoint(temperature, humidity);
+
+  // Ekstrak data RPM Kompresor (Estimated RPM)
+  const rawRpm = latestRpmReading?.estimated_rpm !== undefined ? Number(latestRpmReading.estimated_rpm) : 0;
+  const isSignalBroken = latestRpmReading?.signal_status === 'NO_SIGNAL' || latestRpmReading?.signal_status === 'UNSTABLE';
+  const currentRpm = isSignalBroken ? 0 : Math.max(0, Math.round(rawRpm));
+
+  const compressorStatus = latestRpmReading?.compressor_status || (currentRpm >= 400 ? 'RUNNING' : 'OFF');
+  const rpmTrend = latestRpmReading?.speed_trend || (currentRpm === 0 ? 'STOPPED' : 'STABLE');
+
+  const lowMax = activeCompressorProfile?.rpm_low_max || 1800;
+  const medMax = activeCompressorProfile?.rpm_medium_max || 3200;
+
+  let rpmCategory = 'OFF';
+  if (currentRpm >= 400 && compressorStatus !== 'OFF') {
+    if (currentRpm <= lowMax) rpmCategory = 'LOW';
+    else if (currentRpm <= medMax) rpmCategory = 'MEDIUM';
+    else rpmCategory = 'HIGH';
+  }
 
   // Status evaluasi tegangan
   let voltageStatus = {
@@ -214,46 +243,51 @@ export default function StatusCards() {
         </div>
       </div>
 
-      {/* 4. KARTU STATUS KALIBRASI & DIAGNOSTIK HARDWARE */}
+      {/* 4. KARTU ESTIMATED RPM KOMPRESOR (DI SAMPING KELEMBAPAN RELATIF) */}
       <div className="p-4 rounded-xl border border-industrial-800 bg-industrial-900 relative overflow-hidden shadow-md">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center">
-            <ShieldCheck className="w-4 h-4 mr-1.5 text-emerald-400" />
-            Status Sistem
+            <Gauge className="w-4 h-4 mr-1.5 text-electric-orange" />
+            Estimated RPM
           </span>
-          <span className="text-[11px] font-mono text-slate-400 flex items-center">
-            <Clock className="w-3 h-3 mr-1" />
-            {measuredTimeStr}
+          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold ${
+            rpmCategory === 'HIGH'
+              ? 'bg-rose-950/50 border-rose-600/60 text-rose-300'
+              : rpmCategory === 'MEDIUM'
+              ? 'bg-amber-950/50 border-amber-600/60 text-amber-300'
+              : rpmCategory === 'LOW'
+              ? 'bg-cyan-950/50 border-cyan-600/60 text-cyan-300'
+              : 'bg-industrial-950 border-industrial-800 text-slate-400'
+          }`}>
+            {rpmCategory === 'HIGH' ? 'HIGH (Ngebut)' : rpmCategory}
           </span>
         </div>
 
-        <div className="mt-2 space-y-2">
-          {/* Kalibrasi Tegangan */}
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">Kalibrasi Tegangan:</span>
-            <span className="text-emerald-400 font-mono font-semibold flex items-center">
-              <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Terverifikasi
+        <div className="mt-2 flex items-baseline justify-between">
+          <div className="flex items-baseline space-x-1">
+            <span className="text-4xl font-black font-mono text-white tracking-tight">
+              {currentRpm.toLocaleString('id-ID')}
             </span>
+            <span className="text-lg font-semibold text-slate-400 font-mono">RPM</span>
           </div>
 
-          {/* Status Sensor SHT31 */}
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">Sensor Suhu (SHT31):</span>
-            <span className="text-emerald-400 font-mono font-semibold">
-              {temperature !== null ? 'Siap / Normal' : 'Menunggu...'}
-            </span>
-          </div>
-
-          {/* Sampling Interval */}
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">Laju Pengiriman:</span>
-            <span className="text-slate-200 font-mono">1.0 detik (Realtime)</span>
-          </div>
+          <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded border ${
+            compressorStatus === 'RUNNING'
+              ? 'bg-emerald-950/60 text-emerald-400 border-emerald-700/50'
+              : 'bg-slate-900 text-slate-400 border-slate-750'
+          }`}>
+            {compressorStatus}
+          </span>
         </div>
 
-        <div className="mt-2.5 pt-2 border-t border-industrial-800 text-[11px] text-slate-400 flex justify-between items-center">
-          <span>Isolasi Galvanik:</span>
-          <span className="font-mono text-emerald-400 font-semibold">Aktif (Opto/Trafo)</span>
+        <div className="mt-3 pt-2 border-t border-industrial-800 text-[11px] text-slate-400 flex justify-between items-center">
+          <span className="flex items-center">
+            <Activity className="w-3 h-3 mr-1 text-slate-500" />
+            Tren: <strong className="ml-1 text-slate-300">{rpmTrend}</strong>
+          </span>
+          <span className="font-mono text-slate-400">
+            Fasa {activeCompressorProfile?.sensor_channel || 'U'}
+          </span>
         </div>
       </div>
 

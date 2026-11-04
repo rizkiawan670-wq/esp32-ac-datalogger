@@ -37,25 +37,25 @@ export default function DashboardPage() {
     <div className="space-y-6">
 
       {/* ================================================================== */}
-      {/* 1. RINGKASAN KONDISI AC (TEGANGAN AC RMS, SUHU, KELEMBAPAN, DEW POINT) */}
+      {/* 1. RINGKASAN METRIK UTAMA (TEGANGAN RMS, SUHU, KELEMBAPAN, ESTIMATED RPM) */}
       {/* ================================================================== */}
-      <section aria-label="Ringkasan Kondisi AC">
+      <section aria-label="Ringkasan Metrik Utama AC & Kompresor">
         <StatusCards />
       </section>
 
       {/* ================================================================== */}
-      {/* 2. RINGKASAN RPM COMPRESSOR (ESTIMATED RPM, STATUS, TREND, SENSOR, KALIBRASI) */}
-      {/* ================================================================== */}
-      <section aria-label="Ringkasan RPM Compressor">
-        <CompressorRpmSummary />
-      </section>
-
-      {/* ================================================================== */}
-      {/* 3. GRAFIK MONITORING TERPADU (UNIFIED MULTI-SERIES CHART) */}
-      {/* Seluruh data AC True-RMS, Compressor RPM, Suhu & Kelembapan dalam SATU GRAFIK */}
+      {/* 2. GRAFIK MONITORING TERPADU (UNIFIED MULTI-SERIES CHART) */}
+      {/* Tepat berada langsung di bawah kartu metrik utama */}
       {/* ================================================================== */}
       <section aria-label="Grafik Monitoring Utama Terpadu">
         <RealtimeCharts />
+      </section>
+
+      {/* ================================================================== */}
+      {/* 3. PROFIL & KONTROL DETAIL KOMPRESOR INVERTER */}
+      {/* ================================================================== */}
+      <section aria-label="Ringkasan RPM Compressor">
+        <CompressorRpmSummary />
       </section>
 
       {/* ================================================================== */}
