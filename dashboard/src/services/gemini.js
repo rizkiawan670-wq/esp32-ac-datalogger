@@ -11,18 +11,21 @@ const FALLBACK_MODEL = 'gemini-1.5-flash';
 // Ambil API Key dari localStorage atau environment variable
 export function getStoredGeminiKey() {
   try {
-    return (localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+    const raw = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
+    return raw.trim().replace(/^["']|["']$/g, '');
   } catch (e) {
-    return (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+    const raw = import.meta.env.VITE_GEMINI_API_KEY || '';
+    return raw.trim().replace(/^["']|["']$/g, '');
   }
 }
 
 export function saveStoredGeminiKey(key) {
   try {
-    if (!key || key.trim() === '') {
+    const clean = (key || '').trim().replace(/^["']|["']$/g, '');
+    if (!clean) {
       localStorage.removeItem('gemini_api_key');
     } else {
-      localStorage.setItem('gemini_api_key', key.trim());
+      localStorage.setItem('gemini_api_key', clean);
     }
   } catch (e) {
     console.warn('Gagal menyimpan Gemini API Key ke localStorage:', e);

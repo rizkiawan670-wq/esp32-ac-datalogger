@@ -107,7 +107,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
 
   // Simpan API Key
   const handleSaveApiKey = () => {
-    const cleanKey = apiKeyInput.trim();
+    const cleanKey = apiKeyInput.trim().replace(/^["']|["']$/g, '');
     saveStoredGeminiKey(cleanKey);
     setHasApiKey(Boolean(cleanKey));
     setKeySaveStatus('Kunci Berhasil Disimpan!');
@@ -119,7 +119,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
 
   // Uji Validitas API Key Langsung ke Google
   const handleTestKey = async () => {
-    const cleanKey = apiKeyInput.trim();
+    const cleanKey = apiKeyInput.trim().replace(/^["']|["']$/g, '');
     if (!cleanKey) {
       setKeyTestFeedback({ success: false, message: 'Silakan masukkan API Key terlebih dahulu.' });
       return;
@@ -130,9 +130,12 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
       const res = await testGeminiApiKey(cleanKey);
       setKeyTestFeedback({ 
         success: true, 
-        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model}).` 
+        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model}). Kunci telah otomatis disimpan dan aktif!` 
       });
+      // Otomatis simpan kunci saat uji validitas sukses
+      saveStoredGeminiKey(cleanKey);
       setHasApiKey(true);
+      setKeySaveStatus('Kunci Valid & Aktif!');
     } catch (err) {
       setKeyTestFeedback({ 
         success: false, 
@@ -369,16 +372,28 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
             
             {/* Status API Key Badge */}
             <button
-              onClick={() => setShowKeyModal(true)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-medium transition-all cursor-pointer ${
+              onClick={() => {
+                const stored = getStoredGeminiKey();
+                if (stored) setApiKeyInput(stored);
+                setKeyTestFeedback(null);
+                setShowKeyModal(true);
+              }}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-mono font-medium transition-all cursor-pointer ${
                 hasApiKey
-                  ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/40'
+                  ? 'bg-emerald-950/60 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/50 shadow-sm shadow-emerald-950'
                   : 'bg-industrial-950 border-industrial-700 text-slate-300 hover:border-electric-orange/60'
               }`}
               title="Atur Google Gemini API Key"
             >
-              <Key className="w-3.5 h-3.5 text-electric-orange" />
-              <span>{hasApiKey ? 'Gemini 2.0 Flash Aktif' : 'Engine Offline (Atur API Key)'}</span>
+              <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-electric-orange'}`} />
+              {hasApiKey ? (
+                <span className="flex items-center space-x-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Gemini 2.0 Flash (Online)</span>
+                </span>
+              ) : (
+                <span>Engine Offline (Klik untuk Aktifkan Online)</span>
+              )}
             </button>
 
             {/* Clear Chat Button */}
