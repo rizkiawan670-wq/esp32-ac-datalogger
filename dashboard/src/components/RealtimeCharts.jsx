@@ -33,8 +33,6 @@ import {
   Play, 
   Clock, 
   RotateCw,
-  Maximize2,
-  Minimize2,
   TrendingUp,
   TrendingDown,
   PowerOff,
@@ -159,7 +157,6 @@ export default function RealtimeCharts() {
   const [timeFilter, setTimeFilter] = useState('live');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
 
   // State Dialog Konfirmasi Reset Data
   const [showResetModal, setShowResetModal] = useState(false);
@@ -592,9 +589,7 @@ export default function RealtimeCharts() {
   }, [chartData, medMax]);
 
   return (
-    <div className={`bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 shadow-lg space-y-4 transition-all duration-300 ${
-      isExpanded ? 'ring-2 ring-electric-orange/40' : ''
-    }`}>
+    <div className="bg-industrial-900 border-y sm:border border-industrial-800 sm:rounded-xl -mx-4 sm:mx-0 p-2.5 sm:p-5 shadow-lg space-y-3.5 sm:space-y-4 overflow-hidden">
       
       {/* 1. HEADER GRAFIK UTAMA: Title, Status Sesi RPM Cepat, dan Kontrol Filter */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-4 border-b border-industrial-800 gap-4">
@@ -671,15 +666,6 @@ export default function RealtimeCharts() {
           >
             <Trash2 className="w-3.5 h-3.5 text-rose-400" />
             <span className="hidden md:inline">Reset Data</span>
-          </button>
-
-          {/* Expand View */}
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 rounded-lg bg-industrial-950 border border-industrial-800 text-slate-400 hover:text-white cursor-pointer"
-            title={isExpanded ? 'Perkecil Grafik' : 'Perbesar Grafik'}
-          >
-            {isExpanded ? <Minimize2 className="w-3.5 h-3.5 text-electric-orange" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
 
@@ -870,7 +856,7 @@ export default function RealtimeCharts() {
       </div>
 
       {/* 4. AREA GRAFIK MULTI-AXIS TERPADU */}
-      <div className={`w-full transition-all duration-300 ${isExpanded ? 'h-[480px]' : 'h-84 sm:h-96'}`}>
+      <div className="w-full h-80 sm:h-96 md:h-[420px] -mx-1 sm:mx-0">
         {chartData.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 font-mono text-sm border border-dashed border-industrial-800 rounded-lg p-6 text-center">
             {loadingHistory ? (
@@ -905,7 +891,7 @@ export default function RealtimeCharts() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 15, right: 20, left: 10, bottom: 5 }}>
+            <LineChart data={chartData} margin={{ top: 12, right: 6, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
               
               <XAxis 
