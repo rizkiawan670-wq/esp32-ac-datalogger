@@ -1,0 +1,29 @@
+# Node.js dependencies
+node_modules/
+dashboard/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production build outputs (Netlify builds this automatically on the cloud)
+dist/
+dashboard/dist/
+build/
+
+# Local Environment & Secrets
+.env
+.env.local
+.env.*.local
+supabase/.temp/
+dashboard/npm
+
+# Editor & OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Arduino build artifacts
+*.bin
+*.elf
+*.hex
