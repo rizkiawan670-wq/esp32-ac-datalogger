@@ -4,10 +4,6 @@
 // analisis telemetri realtime, dan diagnosa teknis ESP32 AC Datalogger.
 // ============================================================================
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
-const FALLBACK_MODEL = 'gemini-1.5-flash';
-
 // Ambil API Key dari localStorage atau environment variable
 export function getStoredGeminiKey() {
   try {
@@ -24,6 +20,8 @@ export function saveStoredGeminiKey(key) {
     const clean = (key || '').trim().replace(/^["']|["']$/g, '');
     if (!clean) {
       localStorage.removeItem('gemini_api_key');
+      localStorage.removeItem('gemini_working_model');
+      localStorage.removeItem('gemini_working_version');
     } else {
       localStorage.setItem('gemini_api_key', clean);
     }
@@ -33,27 +31,83 @@ export function saveStoredGeminiKey(key) {
 }
 
 // ----------------------------------------------------------------------------
+// DYNAMIC MODEL DISCOVERY DARI GOOGLE MODELSERVICE.LISTMODELS
+// Meminta langsung daftar model resmi yang diizinkan untuk API Key pengguna
+// ----------------------------------------------------------------------------
+export async function fetchAvailableGeminiModels(apiKey) {
+  const cleanKey = (apiKey || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
+  if (!cleanKey) return [];
+
+  const versions = ['v1beta', 'v1'];
+  for (const ver of versions) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models?key=${cleanKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.models || [])
+          .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+          .map(m => ({
+            name: m.name.replace(/^models\//, ''),
+            fullName: m.name,
+            version: ver,
+            displayName: m.displayName || m.name
+          }));
+        if (models.length > 0) {
+          return models;
+        }
+      }
+    } catch (e) {
+      console.warn(`Gagal memuat list models dari versi ${ver}:`, e.message);
+    }
+  }
+  return [];
+}
+
+// ----------------------------------------------------------------------------
 // TEST FUNCTION: VERIFIKASI KEABSAHAN GOOGLE GEMINI API KEY
 // ----------------------------------------------------------------------------
 export async function testGeminiApiKey(key) {
-  const cleanKey = (key || getStoredGeminiKey() || '').trim();
+  const cleanKey = (key || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
   if (!cleanKey) {
     throw new Error('API Key kosong. Silakan tempelkan kunci dari Google AI Studio.');
   }
 
-  const models = [DEFAULT_MODEL, FALLBACK_MODEL];
+  // 1. Minta Google memberikan daftar model yang aktif untuk API Key ini (ListModels)
+  const availableModels = await fetchAvailableGeminiModels(cleanKey);
+
+  let candidateModels = [];
+  if (availableModels.length > 0) {
+    // Urutkan: utamakan flash (ringan dan cepat)
+    const flashModels = availableModels.filter(m => m.name.toLowerCase().includes('flash'));
+    const otherModels = availableModels.filter(m => !m.name.toLowerCase().includes('flash'));
+    candidateModels = [...flashModels, ...otherModels];
+  } else {
+    // Daftar model alternatif lintas versi v1 dan v1beta jika ListModels terbatas
+    candidateModels = [
+      { name: 'gemini-1.5-flash', version: 'v1' },
+      { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
+      { name: 'gemini-2.0-flash', version: 'v1beta' },
+      { name: 'gemini-2.0-flash-exp', version: 'v1beta' },
+      { name: 'gemini-pro', version: 'v1' },
+      { name: 'gemini-1.5-flash', version: 'v1beta' },
+      { name: 'gemini-1.5-pro', version: 'v1' }
+    ];
+  }
+
   let lastError = null;
 
-  for (const model of models) {
+  for (const candidate of candidateModels) {
+    const ver = candidate.version || 'v1beta';
+    const model = candidate.name;
     try {
-      const response = await fetch(`${GEMINI_API_URL}/${model}:generateContent?key=${cleanKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${cleanKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [
             {
               role: 'user',
-              parts: [{ text: 'Halo, konfirmasi bahwa koneksi API aktif. Balas dengan kata AKTIF.' }]
+              parts: [{ text: 'Halo, respon dengan kata AKTIF.' }]
             }
           ]
         })
@@ -67,10 +121,14 @@ export async function testGeminiApiKey(key) {
       const data = await response.json();
       const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (reply) {
+        // Simpan model & versi API yang terbukti berhasil
+        localStorage.setItem('gemini_working_model', model);
+        localStorage.setItem('gemini_working_version', ver);
         return {
           success: true,
           model: model,
-          message: `Koneksi Berhasil! Model ${model} aktif dan siap digunakan.`
+          version: ver,
+          message: `Koneksi Berhasil! Model "${model}" (${ver}) aktif dan siap digunakan.`
         };
       }
     } catch (err) {
@@ -108,7 +166,6 @@ PEDOMAN JAWABAN:
 
 // ----------------------------------------------------------------------------
 // LOCAL DIAGNOSTIC REASONER (FALLBACK CERDAS SAAT TANPA API KEY)
-// Menjamin asisten tetap 100% responsif & informatif langsung tanpa setup
 // ----------------------------------------------------------------------------
 export function runLocalDiagnosticEngine(userPrompt, telemetryContext) {
   const p = userPrompt.toLowerCase();
@@ -264,10 +321,10 @@ Halo! Saya dapat membantu Anda memahami seluruh proses dan analisis teknis pada 
 }
 
 // ----------------------------------------------------------------------------
-// CALL GEMINI GENERATIVE API (DENGAN FALLBACK OTOMATIS & STRICT TURN ALTERNATION)
+// CALL GEMINI GENERATIVE API (DENGAN AUTO-DISCOVERY & ALTERNATING TURNS)
 // ----------------------------------------------------------------------------
 export async function sendChatMessage({ prompt, history = [], telemetryContext = null, apiKey = null }) {
-  const activeKey = (apiKey || getStoredGeminiKey() || '').trim();
+  const activeKey = (apiKey || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
 
   // Jika tidak ada API key, langsung gunakan Local Diagnostic Engine
   if (!activeKey) {
@@ -300,7 +357,6 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
     : prompt;
 
   // Susun payload request dengan pergantian role yang ketat (user -> model -> user)
-  // Menghindari error HTTP 400 Google API: "multiturn requests must alternate between user and model"
   const cleanHistory = [];
   let expectedRole = 'user';
 
@@ -315,12 +371,10 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
     }
   }
 
-  // Jika riwayat berakhir di user, hapus agar pesan pengguna saat ini menjadi penutup giliran user
   if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
     cleanHistory.pop();
   }
 
-  // Gabungkan riwayat yang sudah bersih (maksimal 4 giliran sebelumnya) + prompt terkini
   const contents = [
     ...cleanHistory.slice(-4),
     {
@@ -344,13 +398,40 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
     }
   };
 
-  // Coba panggil model utama, jika gagal fallback ke model alternatif
-  const modelsToTry = [DEFAULT_MODEL, FALLBACK_MODEL, 'gemini-1.5-pro'];
+  // Tentukan urutan model yang akan dipanggil:
+  // 1. Cek apakah ada model yang sebelumnya terbukti berhasil
+  let savedWorkingModel = localStorage.getItem('gemini_working_model');
+  let savedWorkingVersion = localStorage.getItem('gemini_working_version') || 'v1beta';
+
+  let modelsToTry = [];
+  if (savedWorkingModel) {
+    modelsToTry.push({ name: savedWorkingModel, version: savedWorkingVersion });
+  }
+
+  // 2. Tambahkan model alternatif dari daftar standar v1 & v1beta
+  const fallbackList = [
+    { name: 'gemini-1.5-flash', version: 'v1' },
+    { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
+    { name: 'gemini-2.0-flash', version: 'v1beta' },
+    { name: 'gemini-2.0-flash-exp', version: 'v1beta' },
+    { name: 'gemini-pro', version: 'v1' },
+    { name: 'gemini-1.5-flash', version: 'v1beta' },
+    { name: 'gemini-1.5-pro', version: 'v1' }
+  ];
+
+  for (const f of fallbackList) {
+    if (!modelsToTry.some(m => m.name === f.name && m.version === f.version)) {
+      modelsToTry.push(f);
+    }
+  }
+
   let lastError = null;
 
-  for (const model of modelsToTry) {
+  for (const candidate of modelsToTry) {
+    const ver = candidate.version || 'v1beta';
+    const model = candidate.name;
     try {
-      const response = await fetch(`${GEMINI_API_URL}/${model}:generateContent?key=${activeKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${activeKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -367,14 +448,16 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
       const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (generatedText) {
+        localStorage.setItem('gemini_working_model', model);
+        localStorage.setItem('gemini_working_version', ver);
         return {
           text: generatedText,
           source: 'gemini',
-          model: `Google Gemini (${model})`,
+          model: `Google Gemini (${model} ${ver})`,
         };
       }
     } catch (err) {
-      console.warn(`Gagal memanggil model ${model}:`, err.message);
+      console.warn(`Gagal memanggil model ${model} (${ver}):`, err.message);
       lastError = err;
     }
   }

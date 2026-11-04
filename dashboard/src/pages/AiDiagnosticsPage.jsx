@@ -130,7 +130,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
       const res = await testGeminiApiKey(cleanKey);
       setKeyTestFeedback({ 
         success: true, 
-        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model}). Kunci telah otomatis disimpan dan aktif!` 
+        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model} ${res.version || ''}). Kunci telah otomatis disimpan dan aktif!` 
       });
       // Otomatis simpan kunci saat uji validitas sukses
       saveStoredGeminiKey(cleanKey);
@@ -389,7 +389,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
               {hasApiKey ? (
                 <span className="flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Gemini 2.0 Flash (Online)</span>
+                  <span>Gemini Online Aktif</span>
                 </span>
               ) : (
                 <span>Engine Offline (Klik untuk Aktifkan Online)</span>
