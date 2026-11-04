@@ -32,7 +32,8 @@ import { useApp } from '../context/AppContext';
 import { 
   sendChatMessage, 
   getStoredGeminiKey, 
-  saveStoredGeminiKey 
+  saveStoredGeminiKey,
+  testGeminiApiKey 
 } from '../services/gemini';
 
 export default function AiDiagnosticsPage() {
@@ -71,6 +72,8 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [keySaveStatus, setKeySaveStatus] = useState(null);
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [keyTestFeedback, setKeyTestFeedback] = useState(null);
 
   const chatEndRef = useRef(null);
 
@@ -104,13 +107,40 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
 
   // Simpan API Key
   const handleSaveApiKey = () => {
-    saveStoredGeminiKey(apiKeyInput);
-    setHasApiKey(Boolean(apiKeyInput.trim()));
-    setKeySaveStatus('Tersimpan!');
+    const cleanKey = apiKeyInput.trim();
+    saveStoredGeminiKey(cleanKey);
+    setHasApiKey(Boolean(cleanKey));
+    setKeySaveStatus('Kunci Berhasil Disimpan!');
     setTimeout(() => {
       setKeySaveStatus(null);
       setShowKeyModal(false);
     }, 1200);
+  };
+
+  // Uji Validitas API Key Langsung ke Google
+  const handleTestKey = async () => {
+    const cleanKey = apiKeyInput.trim();
+    if (!cleanKey) {
+      setKeyTestFeedback({ success: false, message: 'Silakan masukkan API Key terlebih dahulu.' });
+      return;
+    }
+    setIsTestingKey(true);
+    setKeyTestFeedback(null);
+    try {
+      const res = await testGeminiApiKey(cleanKey);
+      setKeyTestFeedback({ 
+        success: true, 
+        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model}).` 
+      });
+      setHasApiKey(true);
+    } catch (err) {
+      setKeyTestFeedback({ 
+        success: false, 
+        message: `❌ Validasi Gagal: ${err.message}` 
+      });
+    } finally {
+      setIsTestingKey(false);
+    }
   };
 
   // Hapus API Key
@@ -119,6 +149,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     setApiKeyInput('');
     setHasApiKey(false);
     setKeySaveStatus('Kunci Dihapus');
+    setKeyTestFeedback(null);
     setTimeout(() => {
       setKeySaveStatus(null);
       setShowKeyModal(false);
@@ -132,6 +163,9 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
 
     const userMessageId = `user_${Date.now()}`;
     const userTimestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+    // Salin history sebelum pesan baru ditambahkan (agar turn tetap alternate user -> model)
+    const historyBeforeNewPrompt = messages.filter(m => m.id !== 'welcome');
 
     const newMessages = [
       ...messages,
@@ -150,8 +184,9 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     try {
       const result = await sendChatMessage({
         prompt: query,
-        history: newMessages.filter(m => m.id !== 'welcome'),
+        history: historyBeforeNewPrompt,
         telemetryContext: includeTelemetry ? telemetryContext : null,
+        apiKey: (apiKeyInput || getStoredGeminiKey() || '').trim(),
       });
 
       const assistantMessageId = `assistant_${Date.now()}`;
@@ -343,7 +378,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
               title="Atur Google Gemini API Key"
             >
               <Key className="w-3.5 h-3.5 text-electric-orange" />
-              <span>{hasApiKey ? 'Gemini 2.5 Flash Aktif' : 'Engine Offline (Atur API Key)'}</span>
+              <span>{hasApiKey ? 'Gemini 2.0 Flash Aktif' : 'Engine Offline (Atur API Key)'}</span>
             </button>
 
             {/* Clear Chat Button */}
@@ -483,9 +518,20 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                   {/* Assistant Source Badge */}
                   {!isUser && msg.model && (
                     <div className="flex items-center justify-between border-b border-industrial-800/80 pb-1.5 mb-2 text-[10px] font-mono text-slate-400">
-                      <span className="flex items-center space-x-1 text-purple-300">
-                        <Sparkles className="w-3 h-3 text-purple-400" />
+                      <span className={`flex items-center space-x-1 ${
+                        msg.source === 'gemini' 
+                          ? 'text-emerald-400 font-bold' 
+                          : msg.source === 'fallback' 
+                          ? 'text-amber-400 font-semibold' 
+                          : 'text-purple-300'
+                      }`}>
+                        <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' ? 'text-emerald-400' : 'text-purple-400'}`} />
                         <span>{msg.model}</span>
+                        {msg.source === 'gemini' && (
+                          <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/50">
+                            ONLINE
+                          </span>
+                        )}
                       </span>
                       <button
                         onClick={() => handleCopyText(msg.id, msg.text)}
@@ -596,7 +642,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
             {/* Modal Body */}
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed font-sans">
               <p>
-                Dengan memasukkan <strong>Google Gemini API Key</strong>, asisten AI akan menggunakan model <strong>Gemini 2.5 Flash</strong> dengan kecerdasan generatif online tanpa batas, kemampuan bernalar tingkat lanjut, dan analisis data mendalam.
+                Dengan memasukkan <strong>Google Gemini API Key</strong>, asisten AI akan menggunakan model <strong>Google Gemini (2.0 Flash / 1.5 Flash)</strong> dengan kecerdasan generatif online tanpa batas, kemampuan bernalar tingkat lanjut, dan analisis data mendalam.
               </p>
 
               <div className="p-3 bg-industrial-950 border border-industrial-800 rounded-lg space-y-1.5">
@@ -617,22 +663,61 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                 </a>
               </div>
 
-              {/* Input Form */}
-              <div className="space-y-1.5 pt-1">
+              {/* Input Form & Test Button */}
+              <div className="space-y-2 pt-1">
                 <label className="block text-xs font-mono text-slate-300">
                   Google Gemini API Key:
                 </label>
-                <input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-electric-orange"
-                />
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => {
+                      setApiKeyInput(e.target.value);
+                      setKeyTestFeedback(null);
+                    }}
+                    placeholder="AIzaSy..."
+                    className="flex-1 bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-electric-orange"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestKey}
+                    disabled={isTestingKey || !apiKeyInput.trim()}
+                    className="px-3 py-2 bg-industrial-800 hover:bg-industrial-700 border border-industrial-600 rounded-lg text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer"
+                  >
+                    {isTestingKey ? (
+                      <>
+                        <RotateCw className="w-3.5 h-3.5 animate-spin text-electric-orange" />
+                        <span>Menguji...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Uji Kunci</span>
+                      </>
+                    )}
+                  </button>
+                </div>
                 <span className="text-[10px] text-slate-500 block font-mono">
-                  🔒 Kunci disimpan secara aman di browser lokal Anda (localStorage) dan tidak pernah dikirim ke pihak ketiga selain Google API.
+                  🔒 Kunci disimpan secara aman di browser lokal Anda (localStorage) dan dikirim langsung ke server resmi Google API.
                 </span>
               </div>
+
+              {/* Feedback Hasil Uji Kunci */}
+              {keyTestFeedback && (
+                <div className={`p-2.5 rounded-lg border font-mono text-xs flex items-start space-x-2 ${
+                  keyTestFeedback.success
+                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                    : 'bg-rose-950/60 border-rose-500/50 text-rose-300'
+                }`}>
+                  {keyTestFeedback.success ? (
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <span className="leading-relaxed">{keyTestFeedback.message}</span>
+                </div>
+              )}
 
               {keySaveStatus && (
                 <div className="p-2 rounded bg-emerald-950/60 border border-emerald-500/50 text-emerald-300 font-mono text-xs flex items-center space-x-2">

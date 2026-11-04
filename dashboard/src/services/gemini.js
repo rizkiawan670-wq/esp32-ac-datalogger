@@ -5,15 +5,15 @@
 // ============================================================================
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-2.0-flash';
 const FALLBACK_MODEL = 'gemini-1.5-flash';
 
 // Ambil API Key dari localStorage atau environment variable
 export function getStoredGeminiKey() {
   try {
-    return localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
+    return (localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '').trim();
   } catch (e) {
-    return import.meta.env.VITE_GEMINI_API_KEY || '';
+    return (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
   }
 }
 
@@ -27,6 +27,55 @@ export function saveStoredGeminiKey(key) {
   } catch (e) {
     console.warn('Gagal menyimpan Gemini API Key ke localStorage:', e);
   }
+}
+
+// ----------------------------------------------------------------------------
+// TEST FUNCTION: VERIFIKASI KEABSAHAN GOOGLE GEMINI API KEY
+// ----------------------------------------------------------------------------
+export async function testGeminiApiKey(key) {
+  const cleanKey = (key || getStoredGeminiKey() || '').trim();
+  if (!cleanKey) {
+    throw new Error('API Key kosong. Silakan tempelkan kunci dari Google AI Studio.');
+  }
+
+  const models = [DEFAULT_MODEL, FALLBACK_MODEL];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`${GEMINI_API_URL}/${model}:generateContent?key=${cleanKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: 'Halo, konfirmasi bahwa koneksi API aktif. Balas dengan kata AKTIF.' }]
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (reply) {
+        return {
+          success: true,
+          model: model,
+          message: `Koneksi Berhasil! Model ${model} aktif dan siap digunakan.`
+        };
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Gagal memvalidasi API Key.');
 }
 
 // ----------------------------------------------------------------------------
@@ -212,10 +261,10 @@ Halo! Saya dapat membantu Anda memahami seluruh proses dan analisis teknis pada 
 }
 
 // ----------------------------------------------------------------------------
-// CALL GEMINI GENERATIVE API (DENGAN FALLBACK OTOMATIS)
+// CALL GEMINI GENERATIVE API (DENGAN FALLBACK OTOMATIS & STRICT TURN ALTERNATION)
 // ----------------------------------------------------------------------------
 export async function sendChatMessage({ prompt, history = [], telemetryContext = null, apiKey = null }) {
-  const activeKey = apiKey || getStoredGeminiKey();
+  const activeKey = (apiKey || getStoredGeminiKey() || '').trim();
 
   // Jika tidak ada API key, langsung gunakan Local Diagnostic Engine
   if (!activeKey) {
@@ -243,27 +292,45 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
 `;
   }
 
-  // Susun payload request sesuai spesifikasi Gemini API
-  const contents = [];
+  const userFullPrompt = liveTelemetryBlock 
+    ? `${liveTelemetryBlock}\nPERTANYAAN PENGGUNA:\n${prompt}`
+    : prompt;
 
-  // Sisipkan riwayat percakapan sebelumnya (maksimal 6 percakapan terakhir)
-  const recentHistory = history.slice(-6);
-  for (const item of recentHistory) {
-    contents.push({
-      role: item.role === 'user' ? 'user' : 'model',
-      parts: [{ text: item.text }]
-    });
+  // Susun payload request dengan pergantian role yang ketat (user -> model -> user)
+  // Menghindari error HTTP 400 Google API: "multiturn requests must alternate between user and model"
+  const cleanHistory = [];
+  let expectedRole = 'user';
+
+  for (const item of history) {
+    const r = (item.role === 'assistant' || item.role === 'model') ? 'model' : 'user';
+    if (r === expectedRole && item.text) {
+      cleanHistory.push({
+        role: r,
+        parts: [{ text: item.text }]
+      });
+      expectedRole = r === 'user' ? 'model' : 'user';
+    }
   }
 
-  // Tambahkan prompt pengguna terkini beserta context telemetri
-  const userFullPrompt = `${liveTelemetryBlock}\nPERTANYAAN PENGGUNA:\n${prompt}`;
-  contents.push({
-    role: 'user',
-    parts: [{ text: userFullPrompt }]
-  });
+  // Jika riwayat berakhir di user, hapus agar pesan pengguna saat ini menjadi penutup giliran user
+  if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
+    cleanHistory.pop();
+  }
+
+  // Gabungkan riwayat yang sudah bersih (maksimal 4 giliran sebelumnya) + prompt terkini
+  const contents = [
+    ...cleanHistory.slice(-4),
+    {
+      role: 'user',
+      parts: [{ text: userFullPrompt }]
+    }
+  ];
 
   const requestBody = {
     contents,
+    system_instruction: {
+      parts: [{ text: SYSTEM_INSTRUCTION }]
+    },
     systemInstruction: {
       parts: [{ text: SYSTEM_INSTRUCTION }]
     },
@@ -275,7 +342,7 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
   };
 
   // Coba panggil model utama, jika gagal fallback ke model alternatif
-  const modelsToTry = [DEFAULT_MODEL, FALLBACK_MODEL, 'gemini-2.0-flash'];
+  const modelsToTry = [DEFAULT_MODEL, FALLBACK_MODEL, 'gemini-1.5-pro'];
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -300,7 +367,7 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
         return {
           text: generatedText,
           source: 'gemini',
-          model: model,
+          model: `Google Gemini (${model})`,
         };
       }
     } catch (err) {
@@ -309,11 +376,10 @@ SNAPSHOT TELEMETRI SISTEM SAAT INI (REALTIME):
     }
   }
 
-  // Jika seluruh pemanggilan API gagal (misal API key salah atau kuota habis),
-  // jangan biarkan pengguna tanpa jawaban — fallback mulus ke Local Reasoner!
+  // Jika seluruh pemanggilan API gagal, fallback ke Local Reasoner dengan pesan transparan
   const fallbackAnswer = runLocalDiagnosticEngine(prompt, telemetryContext);
   return {
-    text: `${fallbackAnswer}\n\n> ⚠️ *Catatan: Pemanggilan Gemini API mengalami kendala (${lastError?.message || 'Koneksi error'}). Jawaban di atas dihasilkan secara otomatis oleh Engine Diagnostik Lokal sistem.*`,
+    text: `${fallbackAnswer}\n\n> ⚠️ *Kendala Koneksi Google Gemini API:* \`${lastError?.message || 'Error tidak diketahui'}\`.\n> *Jawaban di atas dialihkan sementara ke Engine Diagnostik Lokal sistem.*`,
     source: 'fallback',
     model: 'Local Diagnostic Engine (API Fallback)',
     error: lastError?.message
