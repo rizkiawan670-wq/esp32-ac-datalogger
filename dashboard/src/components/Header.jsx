@@ -18,7 +18,9 @@ import {
   HardDrive, 
   Settings, 
   BookOpen,
-  Gauge
+  Gauge,
+  Bot,
+  Sparkles
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -39,6 +41,7 @@ export default function Header({ currentTab, setCurrentTab }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'history', label: 'Riwayat', icon: History },
     { id: 'analysis', label: 'Analisis', icon: LineChart },
+    { id: 'ai-diagnostics', label: 'AI Diagnosa', icon: Bot, isAi: true },
     { id: 'devices', label: 'Perangkat', icon: HardDrive },
     { id: 'settings', label: 'Pengaturan', icon: Settings },
     { id: 'guide', label: 'Panduan', icon: BookOpen },
@@ -173,8 +176,13 @@ export default function Header({ currentTab, setCurrentTab }) {
                     : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-industrial-800/30'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-electric-orange' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${isActive ? 'text-electric-orange' : item.isAi ? 'text-purple-400' : 'text-slate-400'}`} />
                 <span>{item.label}</span>
+                {item.isAi && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-500/50 font-mono font-bold">
+                    AI
+                  </span>
+                )}
               </button>
             );
           })}

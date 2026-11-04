@@ -9,6 +9,7 @@ import Header from './components/Header';
 import DashboardPage from './pages/DashboardPage';
 import HistoryPage from './pages/HistoryPage';
 import AnalysisPage from './pages/AnalysisPage';
+import AiDiagnosticsPage from './pages/AiDiagnosticsPage';
 import DevicesPage from './pages/DevicesPage';
 import SettingsPage from './pages/SettingsPage';
 import GuidePage from './pages/GuidePage';
@@ -28,6 +29,7 @@ function MainLayout() {
         {currentTab === 'dashboard' && <DashboardPage />}
         {currentTab === 'history' && <HistoryPage />}
         {currentTab === 'analysis' && <AnalysisPage />}
+        {currentTab === 'ai-diagnostics' && <AiDiagnosticsPage />}
         {currentTab === 'devices' && <DevicesPage />}
         {currentTab === 'settings' && <SettingsPage />}
         {currentTab === 'guide' && <GuidePage />}
