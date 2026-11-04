@@ -30,11 +30,11 @@ export default function SettingsPage() {
 
   // Kredensial Supabase
   const [supabaseUrl, setSupabaseUrl] = useState(() => {
-    return localStorage.getItem('ac_datalogger_supabase_url') || import.meta.env.VITE_SUPABASE_URL || '';
+    return localStorage.getItem('ac_datalogger_supabase_url') || import.meta.env.VITE_SUPABASE_URL || 'https://ixgcqgtwzjjfleipdgzz.supabase.co';
   });
 
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => {
-    return localStorage.getItem('ac_datalogger_supabase_anon_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    return localStorage.getItem('ac_datalogger_supabase_anon_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4Z2NxZ3R3empqZmxlaXBkZ3p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0Njg1OTYsImV4cCI6MjEwOTA0NDU5Nn0.BoD_md3nbdasrD3-tac3e0Ja6wADA36h82DRUjju2e8';
   });
 
   const [testResult, setTestResult] = useState(null);
