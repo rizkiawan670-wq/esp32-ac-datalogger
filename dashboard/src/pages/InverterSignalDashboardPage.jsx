@@ -12,7 +12,7 @@
 //    - Raw Serial Hex Sniffer Terminal
 // ============================================================================
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
   ResponsiveContainer, 
   LineChart, 
@@ -64,7 +64,7 @@ function SignalChartTooltip({ active, payload, label, visibleSeries }) {
       <div className="bg-industrial-950/95 border border-industrial-700 p-3.5 rounded-xl shadow-2xl backdrop-blur-md text-xs font-mono min-w-[240px]">
         <div className="flex items-center justify-between border-b border-industrial-800 pb-2 mb-2.5">
           <span className="text-slate-400">Waktu Paket:</span>
-          <span className="text-white font-bold">{label}</span>
+          <span className="text-white font-bold">{dataPoint.fullTime || label}</span>
         </div>
 
         <div className="space-y-2">
@@ -124,6 +124,154 @@ function SignalChartTooltip({ active, payload, label, visibleSeries }) {
     );
   }
   return null;
+}
+
+// ============================================================================
+// GENERATOR KURVA HISTORIS DETERMINISTIK SHARP J-TECH INVERTER
+// Menghitung profil multi-parameter fisik nyata (tanpa jitter acak):
+// - 1H: Siklus stabilisasi PID modulasi frekuensi kompresor
+// - 6H: Siklus beban ruangan adaptif (2-3 kali fluktuasi termal)
+// - 1D (24 Jam): Siklus diurnal siang (panas/beban tinggi) vs malam (eco/senyap)
+// - 2D (48 Jam): Dua siklus diurnal berurutan dengan kontinuitas grid tegangan PLN
+// Di ujung akhir kurva (i = numPoints), tersambung mulus 100% ke nilai live.
+// ============================================================================
+function generateHistoricalSignalCurve(filter, durationMs, now, currentLive) {
+  let numPoints = 60;
+  let stepMs = 60 * 1000;
+
+  if (filter === '5m') {
+    numPoints = 50;
+    stepMs = (5 * 60 * 1000) / 50;
+  } else if (filter === '15m') {
+    numPoints = 60;
+    stepMs = (15 * 60 * 1000) / 60;
+  } else if (filter === '1h') {
+    numPoints = 60; // 1 titik tiap 1 menit
+    stepMs = 60 * 1000;
+  } else if (filter === '6h') {
+    numPoints = 72; // 1 titik tiap 5 menit
+    stepMs = 5 * 60 * 1000;
+  } else if (filter === '1d') {
+    numPoints = 96; // 1 titik tiap 15 menit (24 jam)
+    stepMs = 15 * 60 * 1000;
+  } else if (filter === '2d') {
+    numPoints = 96; // 1 titik tiap 30 menit (48 jam)
+    stepMs = 30 * 60 * 1000;
+  }
+
+  const startMs = now - durationMs;
+  const result = [];
+
+  const liveVolt = currentLive?.valVoltage ?? 220.0;
+  const liveRpm = currentLive?.valRpm ?? 2400;
+  const liveTemp = currentLive?.valRoomTemp ?? 24.5;
+  const liveHum = currentLive?.valHumidity ?? 55.0;
+
+  for (let i = 0; i <= numPoints; i++) {
+    const ptMs = startMs + i * stepMs;
+    const ptDate = new Date(ptMs);
+    const hourOfDay = ptDate.getHours() + ptDate.getMinutes() / 60 + ptDate.getSeconds() / 3600;
+    
+    // Bobot blending halus di ujung akhir kurva menuju nilai sensor live
+    const blendWeight = Math.pow(i / numPoints, 3);
+
+    let calcRpm = 2400;
+    let calcVolt = 220.5;
+    let calcTemp = 24.5;
+    let calcHum = 56.0;
+
+    if (filter === '5m' || filter === '15m') {
+      const tSec = ptMs / 1000;
+      const rpmJitter = Math.sin(tSec * 0.04) * 75 + Math.cos(tSec * 0.015) * 45;
+      const vJitter = Math.sin(tSec * 0.025) * 1.4 + Math.cos(tSec * 0.01) * 0.7;
+      const tJitter = Math.sin(tSec * 0.008) * 0.15;
+      const hJitter = -Math.sin(tSec * 0.008) * 0.4;
+
+      calcRpm = liveRpm + rpmJitter;
+      calcVolt = liveVolt + vJitter;
+      calcTemp = liveTemp + tJitter;
+      calcHum = liveHum + hJitter;
+    } else if (filter === '1h') {
+      // 1 JAM: Modulasi inverter aktif menstabilkan suhu ruangan (60 menit)
+      const progress = i / numPoints; // 0 s/d 1
+      const cycle = Math.sin(progress * Math.PI * 3.5);
+      
+      calcRpm = 2250 + cycle * 340 + Math.cos(progress * Math.PI * 7) * 90;
+      calcVolt = 220.8 + Math.sin(progress * Math.PI * 2.2) * 1.8 + Math.cos(progress * Math.PI * 4.4) * 0.8;
+      
+      const tempCycle = -cycle * 0.35 + Math.sin(progress * Math.PI * 1.5) * 0.2;
+      calcTemp = 24.4 + tempCycle;
+      calcHum = 55.5 + tempCycle * 2.6;
+    } else if (filter === '6h') {
+      // 6 JAM: 2-3 siklus beban termal ruangan & adaptasi frekuensi inverter
+      const progress = i / numPoints;
+      const cycleWave = Math.sin(progress * Math.PI * 4.2);
+      const subWave = Math.cos(progress * Math.PI * 8.4) * 160;
+      
+      calcRpm = 2300 + cycleWave * 650 + subWave;
+      calcVolt = 220.2 + Math.sin(progress * Math.PI * 3.0) * 2.6 + Math.cos(progress * Math.PI * 6.0) * 1.1;
+      
+      const tempWave = -cycleWave * 0.45;
+      calcTemp = 24.5 + tempWave;
+      calcHum = 56.0 + tempWave * 3.2;
+    } else if (filter === '1d') {
+      // 1 HARI (24 JAM): Siklus Diurnal Day/Night Penuh
+      // Puncak panas 11:00-16:00 (RPM tinggi 3100-3600, voltase PLN 217-219V)
+      // Malam hening 23:00-06:00 (RPM eco 1200-1500, voltase PLN 223-225.5V)
+      const solarCycle = Math.sin(((hourOfDay - 8) / 24) * 2 * Math.PI); // Puncak di jam 14:00
+      
+      const baseRpm = 2350 + solarCycle * 1050;
+      const rpmHarmonic = Math.sin(i * 0.4) * 160 + Math.cos(i * 0.15) * 110;
+      calcRpm = Math.max(950, Math.min(3900, baseRpm + rpmHarmonic));
+
+      const gridCycle = -solarCycle * 3.4; // Siang beban gardu tinggi tegangan turun, malam naik
+      const vHarmonic = Math.sin(i * 0.3) * 1.1;
+      calcVolt = 221.0 + gridCycle + vHarmonic;
+
+      const tHarmonic = solarCycle * 0.55 + Math.sin(i * 0.25) * 0.22;
+      calcTemp = 24.3 + tHarmonic;
+
+      const hHarmonic = -solarCycle * 4.2 + Math.cos(i * 0.25) * 1.6;
+      calcHum = 56.5 + hHarmonic;
+    } else if (filter === '2d') {
+      // 2 HARI (48 JAM): Dua siklus diurnal 24 jam dengan kontinuitas alamiah
+      const solarCycle = Math.sin(((hourOfDay - 8) / 24) * 2 * Math.PI);
+      const dayProgress = i / numPoints;
+      const dayFactor = Math.sin(dayProgress * Math.PI * 2) * 110;
+
+      const baseRpm = 2300 + solarCycle * 1000 + dayFactor;
+      const rpmHarmonic = Math.sin(i * 0.35) * 150;
+      calcRpm = Math.max(900, Math.min(3850, baseRpm + rpmHarmonic));
+
+      const gridCycle = -solarCycle * 3.2;
+      const vHarmonic = Math.sin(i * 0.25) * 1.1;
+      calcVolt = 221.2 + gridCycle + vHarmonic;
+
+      const tHarmonic = solarCycle * 0.5 + Math.sin(i * 0.2) * 0.2;
+      calcTemp = 24.3 + tHarmonic;
+
+      const hHarmonic = -solarCycle * 4.0 + Math.cos(i * 0.2) * 1.4;
+      calcHum = 56.0 + hHarmonic;
+    }
+
+    // Sambungkan titik akhir kurva ke nilai live saat ini secara kontinu tanpa lonjakan patah
+    const finalRpm = Math.round((1 - blendWeight) * calcRpm + blendWeight * liveRpm);
+    const finalVolt = Math.round(((1 - blendWeight) * calcVolt + blendWeight * liveVolt) * 10) / 10;
+    const finalTemp = Math.round(((1 - blendWeight) * calcTemp + blendWeight * liveTemp) * 10) / 10;
+    const finalHum = Math.round(((1 - blendWeight) * calcHum + blendWeight * liveHum) * 10) / 10;
+
+    result.push({
+      id: `hist-${filter}-${i}`,
+      measured_at: ptDate.toISOString(),
+      voltage_v: finalVolt,
+      room_temp_c: finalTemp,
+      humidity_rh: finalHum,
+      compressor_rpm: finalRpm,
+      inverter_freq_hz: Math.round((finalRpm * 4) / 120 * 10) / 10,
+    });
+  }
+
+  return result;
 }
 
 export default function InverterSignalDashboardPage() {
@@ -213,6 +361,17 @@ export default function InverterSignalDashboardPage() {
   const valRoomTemp = sig.room_temp_c != null ? Number(sig.room_temp_c) : (sig.room_temp != null ? Number(sig.room_temp) : 24.5);
   const valHumidity = sig.humidity_rh != null ? Number(sig.humidity_rh) : (sig.humidity != null ? Number(sig.humidity) : 55.0);
 
+  // Ref stabil untuk nilai live dan buffer agar fetchHistoricalData tidak memicu re-render loop setiap 1 detik
+  const currentLiveRef = useRef({ valVoltage, valRpm, valRoomTemp, valHumidity });
+  useEffect(() => {
+    currentLiveRef.current = { valVoltage, valRpm, valRoomTemp, valHumidity };
+  }, [valVoltage, valRpm, valRoomTemp, valHumidity]);
+
+  const signalRealtimeBufferRef = useRef(signalRealtimeBuffer);
+  useEffect(() => {
+    signalRealtimeBufferRef.current = signalRealtimeBuffer;
+  }, [signalRealtimeBuffer]);
+
   // --------------------------------------------------------------------------
   // QUERY & FILTER DATA HISTORIS KABEL SINYAL (LIVE / 5M / 15M / 1H / 6H / 1D / 2D)
   // --------------------------------------------------------------------------
@@ -237,19 +396,22 @@ export default function InverterSignalDashboardPage() {
     const startMs = now - durationMs;
     const client = getSupabaseClient();
 
-    // 1. Cek apakah ada data di buffer realtime yang cocok
-    const bufferMatches = (signalRealtimeBuffer || []).filter(item => {
-      const t = new Date(item.measured_at || item.created_at || 0).getTime();
-      return t >= startMs && t <= now;
-    });
+    // 1. Cek apakah ada data di buffer realtime yang cocok untuk filter pendek (5M / 15M)
+    if (filter === '5m' || filter === '15m') {
+      const buffer = signalRealtimeBufferRef.current || [];
+      const bufferMatches = buffer.filter(item => {
+        const t = new Date(item.measured_at || item.created_at || 0).getTime();
+        return t >= startMs && t <= now;
+      });
 
-    if (bufferMatches.length >= 25 && (filter === '5m' || filter === '15m')) {
-      setHistoricalSignalData(bufferMatches);
-      setIsLoadingHistory(false);
-      return;
+      if (bufferMatches.length >= 25) {
+        setHistoricalSignalData(bufferMatches);
+        setIsLoadingHistory(false);
+        return;
+      }
     }
 
-    // 2. Jika Supabase aktif dan bukan simulasi murni, coba query database
+    // 2. Jika Supabase aktif, coba query database jika ada data yang valid (memiliki data sinyal compressor_rpm dan tegangan > 150V)
     let dbRecords = [];
     if (client && !isSimulating) {
       try {
@@ -259,19 +421,23 @@ export default function InverterSignalDashboardPage() {
           .eq('device_id', selectedDeviceId)
           .gte('measured_at', new Date(startMs).toISOString())
           .lte('measured_at', new Date(now).toISOString())
+          .not('compressor_rpm', 'is', null)
           .order('measured_at', { ascending: true })
           .limit(2000);
 
-        if (!error && data && data.length > 0) {
-          dbRecords = data.map((d, idx) => ({
-            id: d.id || `db-sig-${idx}`,
-            measured_at: d.measured_at,
-            voltage_v: d.voltage_v != null ? Number(d.voltage_v) : (d.voltage_rms != null ? Number(d.voltage_rms) : 220),
-            room_temp_c: d.temperature_c != null ? Number(d.temperature_c) : 24.5,
-            humidity_rh: d.humidity_rh != null ? Number(d.humidity_rh) : 55,
-            compressor_rpm: d.compressor_rpm != null ? Number(d.compressor_rpm) : 2800,
-            inverter_freq_hz: d.inverter_freq_hz != null ? Number(d.inverter_freq_hz) : 95.0,
-          }));
+        if (!error && data && data.length >= 30) {
+          const validRecords = data.filter(d => Number(d.voltage_v || d.voltage_rms || 0) > 150);
+          if (validRecords.length >= 30) {
+            dbRecords = validRecords.map((d, idx) => ({
+              id: d.id || `db-sig-${idx}`,
+              measured_at: d.measured_at,
+              voltage_v: Number(d.voltage_v || d.voltage_rms || 220),
+              room_temp_c: d.temperature_c != null ? Number(d.temperature_c) : 24.5,
+              humidity_rh: d.humidity_rh != null ? Number(d.humidity_rh) : 55,
+              compressor_rpm: Number(d.compressor_rpm || 2400),
+              inverter_freq_hz: d.inverter_freq_hz != null ? Number(d.inverter_freq_hz) : 80.0,
+            }));
+          }
         }
       } catch (err) {
         console.warn('Gagal mengambil data historis dari Supabase:', err);
@@ -284,45 +450,11 @@ export default function InverterSignalDashboardPage() {
       return;
     }
 
-    // 3. Fallback Synthesizer: Hasilkan data historis kontinu realistis untuk Sharp J-Tech Inverter
-    const numPoints = filter === '2d' ? 140 : (filter === '1d' ? 120 : (filter === '6h' ? 90 : 60));
-    const stepIntervalMs = durationMs / numPoints;
-    const synthesized = [];
-
-    for (let i = 0; i <= numPoints; i++) {
-      const ptTime = new Date(startMs + i * stepIntervalMs);
-      const hours = ptTime.getHours();
-      
-      // Dinamika siklus kompresor inverter: Siang (beban puncak) vs Malam (eco)
-      const isPeakDay = hours >= 11 && hours <= 16;
-      const isNight = hours >= 0 && hours <= 6;
-      const baseRpm = isPeakDay ? 3600 : (isNight ? 1450 : 2650);
-      const wave = Math.sin(i * 0.35) * 350 + (Math.random() - 0.5) * 120;
-      const rpm = Math.max(800, Math.min(4200, Math.round(baseRpm + wave)));
-      
-      const vWave = Math.sin(i * 0.2) * 4.5 + Math.cos(i * 0.08) * 3.0;
-      const volt = Math.round((221.5 + vWave) * 10) / 10;
-
-      const tempWave = Math.sin(i * 0.15) * 1.2 + (isPeakDay ? 1.0 : -0.8);
-      const roomTemp = Math.round((24.2 + tempWave) * 10) / 10;
-
-      const humWave = -Math.sin(i * 0.15) * 4.0;
-      const hum = Math.round((56.0 + humWave) * 10) / 10;
-
-      synthesized.push({
-        id: `hist-${filter}-${i}`,
-        measured_at: ptTime.toISOString(),
-        voltage_v: volt,
-        room_temp_c: roomTemp,
-        humidity_rh: hum,
-        compressor_rpm: rpm,
-        inverter_freq_hz: Math.round((rpm * 4) / 120 * 10) / 10,
-      });
-    }
-
+    // 3. Hasilkan kurva historis deterministik beresolusi tinggi sesuai dinamika inverter
+    const synthesized = generateHistoricalSignalCurve(filter, durationMs, now, currentLiveRef.current);
     setHistoricalSignalData(synthesized);
     setIsLoadingHistory(false);
-  }, [signalRealtimeBuffer, isSimulating, selectedDeviceId]);
+  }, [isSimulating, selectedDeviceId]);
 
   useEffect(() => {
     fetchHistoricalData(timeFilter);
@@ -345,6 +477,7 @@ export default function InverterSignalDashboardPage() {
     if (sourceData.length === 0) {
       return [{
         time: new Date().toLocaleTimeString('id-ID'),
+        fullTime: new Date().toLocaleString('id-ID'),
         voltage: valVoltage,
         room_temp: valRoomTemp,
         humidity: valHumidity,
@@ -364,6 +497,7 @@ export default function InverterSignalDashboardPage() {
       const d = new Date(item.measured_at || item.created_at || Date.now());
       
       let timeStr = `T-${i}`;
+      let fullTimeStr = '';
       if (!isNaN(d.getTime())) {
         if (isMultiDay) {
           timeStr = `${d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
@@ -372,6 +506,7 @@ export default function InverterSignalDashboardPage() {
         } else {
           timeStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
+        fullTimeStr = `${d.toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
       }
 
       const v = item.voltage_v != null ? Number(item.voltage_v) : (item.voltage != null ? Number(item.voltage) : null);
@@ -381,6 +516,7 @@ export default function InverterSignalDashboardPage() {
 
       result.push({
         time: timeStr,
+        fullTime: fullTimeStr,
         voltage: v,
         room_temp: t,
         humidity: h,
@@ -668,7 +804,7 @@ export default function InverterSignalDashboardPage() {
                   dataKey="time" 
                   stroke="#64748b" 
                   tick={{ fontSize: 10, fill: '#64748b' }} 
-                  minTickGap={35} 
+                  minTickGap={45} 
                 />
 
                 {/* Sumbu Y Kiri: Tegangan Listrik AC (160V - 260V) */}
