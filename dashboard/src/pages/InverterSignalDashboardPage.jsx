@@ -44,13 +44,16 @@ import {
   Cpu, 
   Sliders, 
   AlertOctagon, 
-  Info 
+  Info,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateDewPoint } from '../utils/analytics';
 
 // Tooltip khusus untuk 4-parameter kabel sinyal
-function SignalChartTooltip({ active, payload, label }) {
+function SignalChartTooltip({ active, payload, label, visibleSeries }) {
   if (active && payload && payload.length) {
     const dataPoint = payload[0]?.payload || {};
 
@@ -62,8 +65,21 @@ function SignalChartTooltip({ active, payload, label }) {
         </div>
 
         <div className="space-y-2">
+          {/* Voltase Sinyal */}
+          {visibleSeries?.voltage !== false && dataPoint.voltage !== undefined && dataPoint.voltage !== null && (
+            <div className="flex items-center justify-between">
+              <span className="flex items-center space-x-1.5 text-amber-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span>Tegangan Bus:</span>
+              </span>
+              <span className="font-bold text-white">
+                {Number(dataPoint.voltage).toFixed(1)} VAC
+              </span>
+            </div>
+          )}
+
           {/* RPM Kompresor */}
-          {dataPoint.compressor_rpm !== undefined && dataPoint.compressor_rpm !== null && (
+          {visibleSeries?.rpm !== false && dataPoint.compressor_rpm !== undefined && dataPoint.compressor_rpm !== null && (
             <div className="flex items-center justify-between">
               <span className="flex items-center space-x-1.5 text-electric-orange">
                 <span className="w-2.5 h-2.5 rounded-full bg-electric-orange"></span>
@@ -75,21 +91,8 @@ function SignalChartTooltip({ active, payload, label }) {
             </div>
           )}
 
-          {/* Voltase Sinyal */}
-          {dataPoint.voltage !== undefined && dataPoint.voltage !== null && (
-            <div className="flex items-center justify-between">
-              <span className="flex items-center space-x-1.5 text-electric-amber">
-                <span className="w-2.5 h-2.5 rounded-full bg-electric-amber"></span>
-                <span>Tegangan Bus:</span>
-              </span>
-              <span className="font-bold text-white">
-                {Number(dataPoint.voltage).toFixed(1)} VAC
-              </span>
-            </div>
-          )}
-
           {/* Suhu Ruangan Thermistor */}
-          {dataPoint.room_temp !== undefined && dataPoint.room_temp !== null && (
+          {visibleSeries?.temperature !== false && dataPoint.room_temp !== undefined && dataPoint.room_temp !== null && (
             <div className="flex items-center justify-between">
               <span className="flex items-center space-x-1.5 text-rose-400">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
@@ -102,7 +105,7 @@ function SignalChartTooltip({ active, payload, label }) {
           )}
 
           {/* Kelembapan Relatif */}
-          {dataPoint.humidity !== undefined && dataPoint.humidity !== null && (
+          {visibleSeries?.humidity !== false && dataPoint.humidity !== undefined && dataPoint.humidity !== null && (
             <div className="flex items-center justify-between">
               <span className="flex items-center space-x-1.5 text-cyan-400">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
@@ -135,14 +138,27 @@ export default function InverterSignalDashboardPage() {
 
   // Toggle visibilitas seri pada grafik
   const [visibleSeries, setVisibleSeries] = useState({
-    rpm: true,
     voltage: true,
+    rpm: true,
     temperature: true,
     humidity: true,
   });
 
   const toggleSeries = (key) => {
     setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const showAllSeries = () => {
+    setVisibleSeries({ voltage: true, rpm: true, temperature: true, humidity: true });
+  };
+
+  const isolateSeries = (key) => {
+    setVisibleSeries({
+      voltage: key === 'voltage',
+      rpm: key === 'rpm',
+      temperature: key === 'temperature',
+      humidity: key === 'humidity',
+    });
   };
 
   // Ekstrak data telemetri terkini dari kabel sinyal
@@ -174,38 +190,50 @@ export default function InverterSignalDashboardPage() {
     packet_raw_hex: 'AA 55 14 5F 18 0B 20 29 4A B9 00 B4',
   };
 
+  // Nilai aman numerik untuk tampilan kartu & legend (anti-crash jika salah satu bernilai null/undefined)
+  const valVoltage = sig.voltage_v != null ? Number(sig.voltage_v) : (sig.voltage != null ? Number(sig.voltage) : 220.0);
+  const valRpm = sig.compressor_rpm != null ? Number(sig.compressor_rpm) : 0;
+  const valRoomTemp = sig.room_temp_c != null ? Number(sig.room_temp_c) : (sig.room_temp != null ? Number(sig.room_temp) : 24.5);
+  const valHumidity = sig.humidity_rh != null ? Number(sig.humidity_rh) : (sig.humidity != null ? Number(sig.humidity) : 55.0);
+
   // Format data grafik 4-parameter
   const chartData = useMemo(() => {
-    if (!signalRealtimeBuffer || signalRealtimeBuffer.length === 0) {
-      if (latestSignalReading) {
-        return [{
-          time: new Date().toLocaleTimeString('id-ID'),
-          voltage: latestSignalReading.voltage_v,
-          room_temp: latestSignalReading.room_temp_c,
-          humidity: latestSignalReading.humidity_rh,
-          compressor_rpm: latestSignalReading.compressor_rpm,
-        }];
-      }
-      return [];
+    const sourceData = signalRealtimeBuffer && signalRealtimeBuffer.length > 0
+      ? signalRealtimeBuffer
+      : (latestSignalReading ? [latestSignalReading] : []);
+
+    if (sourceData.length === 0) {
+      return [{
+        time: new Date().toLocaleTimeString('id-ID'),
+        voltage: valVoltage,
+        room_temp: valRoomTemp,
+        humidity: valHumidity,
+        compressor_rpm: valRpm,
+      }];
     }
 
-    return signalRealtimeBuffer.map((item, idx) => {
-      const d = new Date(item.measured_at || Date.now());
+    return sourceData.map((item, idx) => {
+      const d = new Date(item.measured_at || item.created_at || Date.now());
       const timeStr = !isNaN(d.getTime())
         ? d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         : `T-${idx}`;
 
+      const v = item.voltage_v != null ? Number(item.voltage_v) : (item.voltage != null ? Number(item.voltage) : null);
+      const t = item.room_temp_c != null ? Number(item.room_temp_c) : (item.room_temp != null ? Number(item.room_temp) : null);
+      const h = item.humidity_rh != null ? Number(item.humidity_rh) : (item.humidity != null ? Number(item.humidity) : null);
+      const rpm = item.compressor_rpm != null ? Number(item.compressor_rpm) : null;
+
       return {
         time: timeStr,
-        voltage: item.voltage_v !== undefined ? Number(item.voltage_v) : null,
-        room_temp: item.room_temp_c !== undefined ? Number(item.room_temp_c) : null,
-        humidity: item.humidity_rh !== undefined ? Number(item.humidity_rh) : null,
-        compressor_rpm: item.compressor_rpm !== undefined ? Number(item.compressor_rpm) : null,
+        voltage: v,
+        room_temp: t,
+        humidity: h,
+        compressor_rpm: rpm,
       };
     });
-  }, [signalRealtimeBuffer, latestSignalReading]);
+  }, [signalRealtimeBuffer, latestSignalReading, valVoltage, valRoomTemp, valHumidity, valRpm]);
 
-  const dewPoint = calculateDewPoint(sig.room_temp_c, sig.humidity_rh);
+  const dewPoint = calculateDewPoint(valRoomTemp, valHumidity);
 
   return (
     <div className="space-y-6">
@@ -299,163 +327,282 @@ export default function InverterSignalDashboardPage() {
         </div>
 
         {/* Legend Interaktif Seri */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-industrial-950 rounded-lg border border-industrial-850 text-xs font-mono">
-          <div className="flex items-center space-x-2 text-slate-400 text-[11px]">
-            <Layers className="w-3.5 h-3.5 text-slate-400" />
-            <span>Klik Seri untuk Sembunyikan:</span>
+        <div className="p-3 bg-industrial-950 rounded-xl border border-industrial-850 space-y-2.5 text-xs font-mono">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-industrial-850/80 pb-2">
+            <div className="flex items-center space-x-2 text-slate-300">
+              <Layers className="w-4 h-4 text-cyan-400" />
+              <span className="font-bold">Filter Seri Grafik:</span>
+              <span className="text-slate-500 text-[11px]">(Klik tombol untuk menyembunyikan / menampilkan)</span>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={showAllSeries}
+                className="px-2.5 py-1 rounded bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-600/40 text-[11px] text-cyan-300 transition-colors flex items-center space-x-1 font-bold cursor-pointer"
+                title="Tampilkan semua 4 seri parameter"
+              >
+                <Check className="w-3 h-3" />
+                <span>Tampilkan Semua</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Seri 1: RPM Kompresor */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* Seri 1: Voltase AC */}
             <button
-              onClick={() => toggleSeries('rpm')}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded border transition-all cursor-pointer ${
-                visibleSeries.rpm
-                  ? 'bg-orange-500/20 border-orange-500 text-orange-400 font-bold'
-                  : 'bg-industrial-900 border-industrial-800 text-slate-600 line-through'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-electric-orange"></span>
-              <span>RPM Kompresor ({sig.compressor_rpm.toLocaleString('id-ID')} RPM)</span>
-            </button>
-
-            {/* Seri 2: Voltase AC */}
-            <button
+              type="button"
               onClick={() => toggleSeries('voltage')}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded border transition-all cursor-pointer ${
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left cursor-pointer ${
                 visibleSeries.voltage
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-400 font-bold'
-                  : 'bg-industrial-900 border-industrial-800 text-slate-600 line-through'
+                  ? 'bg-amber-950/30 border-amber-500/70 text-amber-300 shadow-sm shadow-amber-950'
+                  : 'bg-industrial-900/60 border-industrial-800 text-slate-500 opacity-60'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span>Voltase ({sig.voltage_v.toFixed(1)} V)</span>
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${visibleSeries.voltage ? 'bg-amber-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                <div className="truncate">
+                  <div className={`font-bold ${visibleSeries.voltage ? 'text-amber-300' : 'line-through text-slate-500'}`}>
+                    Voltase Bus AC
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    {valVoltage.toFixed(1)} V
+                  </div>
+                </div>
+              </div>
+              {visibleSeries.voltage ? (
+                <Eye className="w-3.5 h-3.5 text-amber-400 shrink-0 ml-1" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-slate-500 shrink-0 ml-1" />
+              )}
             </button>
 
-            {/* Seri 3: Suhu Ruangan */}
+            {/* Seri 2: RPM Kompresor */}
             <button
-              onClick={() => toggleSeries('temperature')}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded border transition-all cursor-pointer ${
-                visibleSeries.temperature
-                  ? 'bg-rose-500/20 border-rose-500 text-rose-400 font-bold'
-                  : 'bg-industrial-900 border-industrial-800 text-slate-600 line-through'
+              type="button"
+              onClick={() => toggleSeries('rpm')}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left cursor-pointer ${
+                visibleSeries.rpm
+                  ? 'bg-orange-950/30 border-orange-500/70 text-orange-300 shadow-sm shadow-orange-950'
+                  : 'bg-industrial-900/60 border-industrial-800 text-slate-500 opacity-60'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              <span>Suhu Ruangan ({sig.room_temp_c.toFixed(1)} °C)</span>
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${visibleSeries.rpm ? 'bg-orange-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                <div className="truncate">
+                  <div className={`font-bold ${visibleSeries.rpm ? 'text-orange-300' : 'line-through text-slate-500'}`}>
+                    RPM Kompresor
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    {valRpm.toLocaleString('id-ID')} RPM
+                  </div>
+                </div>
+              </div>
+              {visibleSeries.rpm ? (
+                <Eye className="w-3.5 h-3.5 text-orange-400 shrink-0 ml-1" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-slate-500 shrink-0 ml-1" />
+              )}
+            </button>
+
+            {/* Seri 3: Suhu Ruangan Thermistor */}
+            <button
+              type="button"
+              onClick={() => toggleSeries('temperature')}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left cursor-pointer ${
+                visibleSeries.temperature
+                  ? 'bg-rose-950/30 border-rose-500/70 text-rose-300 shadow-sm shadow-rose-950'
+                  : 'bg-industrial-900/60 border-industrial-800 text-slate-500 opacity-60'
+              }`}
+            >
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${visibleSeries.temperature ? 'bg-rose-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                <div className="truncate">
+                  <div className={`font-bold ${visibleSeries.temperature ? 'text-rose-300' : 'line-through text-slate-500'}`}>
+                    Suhu Ruangan
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    {valRoomTemp.toFixed(1)} °C
+                  </div>
+                </div>
+              </div>
+              {visibleSeries.temperature ? (
+                <Eye className="w-3.5 h-3.5 text-rose-400 shrink-0 ml-1" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-slate-500 shrink-0 ml-1" />
+              )}
             </button>
 
             {/* Seri 4: Kelembaban */}
             <button
+              type="button"
               onClick={() => toggleSeries('humidity')}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded border transition-all cursor-pointer ${
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left cursor-pointer ${
                 visibleSeries.humidity
-                  ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400 font-bold'
-                  : 'bg-industrial-900 border-industrial-800 text-slate-600 line-through'
+                  ? 'bg-cyan-950/30 border-cyan-500/70 text-cyan-300 shadow-sm shadow-cyan-950'
+                  : 'bg-industrial-900/60 border-industrial-800 text-slate-500 opacity-60'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-              <span>Kelembaban ({sig.humidity_rh.toFixed(1)} %)</span>
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${visibleSeries.humidity ? 'bg-cyan-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                <div className="truncate">
+                  <div className={`font-bold ${visibleSeries.humidity ? 'text-cyan-300' : 'line-through text-slate-500'}`}>
+                    Kelembaban
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    {valHumidity.toFixed(1)} %RH
+                  </div>
+                </div>
+              </div>
+              {visibleSeries.humidity ? (
+                <Eye className="w-3.5 h-3.5 text-cyan-400 shrink-0 ml-1" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-slate-500 shrink-0 ml-1" />
+              )}
             </button>
           </div>
         </div>
 
-        {/* Kanvas Grafik Multi-Axis */}
+        {/* Kanvas Grafik Multi-Axis atau Empty State */}
         <div className="w-full h-80 sm:h-96 md:h-[380px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+          {(!visibleSeries.rpm && !visibleSeries.voltage && !visibleSeries.temperature && !visibleSeries.humidity) ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-industrial-950/70 rounded-xl border border-dashed border-industrial-800 text-slate-400 font-mono text-xs space-y-3">
+              <Layers className="w-8 h-8 text-slate-600 animate-pulse" />
+              <span>Semua seri grafik sedang disembunyikan.</span>
+              <button
+                type="button"
+                onClick={showAllSeries}
+                className="px-3 py-1.5 rounded-lg bg-cyan-600/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-600/30 font-bold transition-all cursor-pointer"
+              >
+                Tampilkan Semua Seri
+              </button>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 12, right: 14, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
 
-              <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 10, fill: '#64748b' }} minTickGap={35} />
-
-              {/* Sumbu Y Kiri 1: RPM Kompresor (0 - 4500 RPM) */}
-              <YAxis 
-                yAxisId="rpm" 
-                orientation="left" 
-                domain={[0, 4200]} 
-                stroke="#f97316" 
-                tick={{ fontSize: 10, fill: '#f97316' }} 
-                unit=" RPM"
-                hide={!visibleSeries.rpm}
-              />
-
-              {/* Sumbu Y Kiri 2: Voltase (160 - 260 V) */}
-              <YAxis 
-                yAxisId="voltage" 
-                orientation="left" 
-                domain={[160, 260]} 
-                stroke="#f59e0b" 
-                tick={{ fontSize: 10, fill: '#f59e0b' }} 
-                unit="V"
-                hide={!visibleSeries.voltage || visibleSeries.rpm}
-              />
-
-              {/* Sumbu Y Kanan: Suhu & Kelembaban (0 - 100) */}
-              <YAxis 
-                yAxisId="env" 
-                orientation="right" 
-                domain={[0, 100]} 
-                stroke="#94a3b8" 
-                tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                unit="°"
-                hide={!visibleSeries.temperature && !visibleSeries.humidity}
-              />
-
-              <Tooltip content={<SignalChartTooltip />} />
-
-              {/* Garis Seri 1: RPM Kompresor */}
-              {visibleSeries.rpm && (
-                <Line 
-                  yAxisId="rpm" 
-                  type="monotone" 
-                  dataKey="compressor_rpm" 
-                  stroke="#f97316" 
-                  strokeWidth={2.5} 
-                  dot={false}
-                  isAnimationActive={false}
+                <XAxis 
+                  dataKey="time" 
+                  stroke="#64748b" 
+                  tick={{ fontSize: 10, fill: '#64748b' }} 
+                  minTickGap={35} 
                 />
-              )}
 
-              {/* Garis Seri 2: Voltase AC */}
-              {visibleSeries.voltage && (
-                <Line 
-                  yAxisId={visibleSeries.rpm ? "rpm" : "voltage"} 
-                  type="monotone" 
-                  dataKey="voltage" 
+                {/* Sumbu Y Kiri: Tegangan Listrik AC (160V - 260V) */}
+                <YAxis 
+                  yAxisId="voltage" 
+                  orientation="left" 
+                  domain={[160, 260]} 
                   stroke="#f59e0b" 
-                  strokeWidth={1.8} 
-                  dot={false}
-                  isAnimationActive={false}
+                  tick={{ fontSize: 10, fill: '#f59e0b' }} 
+                  unit="V"
+                  width={48}
+                  hide={!visibleSeries.voltage}
                 />
-              )}
 
-              {/* Garis Seri 3: Suhu Ruangan Thermistor */}
-              {visibleSeries.temperature && (
-                <Line 
-                  yAxisId="env" 
-                  type="monotone" 
-                  dataKey="room_temp" 
-                  stroke="#ef4444" 
-                  strokeWidth={1.8} 
-                  dot={false}
-                  isAnimationActive={false}
+                {/* Sumbu Y Kanan 1: RPM Kompresor (0 - 4200 RPM) */}
+                <YAxis 
+                  yAxisId="rpm" 
+                  orientation="right" 
+                  domain={[0, 4200]} 
+                  stroke="#f97316" 
+                  tick={{ fontSize: 10, fill: '#f97316' }} 
+                  unit=" RPM"
+                  width={65}
+                  hide={!visibleSeries.rpm}
                 />
-              )}
 
-              {/* Garis Seri 4: Kelembapan Relatif */}
-              {visibleSeries.humidity && (
-                <Line 
+                {/* Sumbu Y Kanan 2: Suhu & Kelembaban (0 - 100) */}
+                <YAxis 
                   yAxisId="env" 
-                  type="monotone" 
-                  dataKey="humidity" 
-                  stroke="#06b6d4" 
-                  strokeWidth={1.8} 
-                  dot={false}
-                  isAnimationActive={false}
+                  orientation="right" 
+                  domain={[0, 100]} 
+                  stroke="#38bdf8" 
+                  tick={{ fontSize: 10, fill: '#38bdf8' }} 
+                  unit="°/%"
+                  width={45}
+                  hide={!visibleSeries.temperature && !visibleSeries.humidity}
                 />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
+
+                <Tooltip content={<SignalChartTooltip visibleSeries={visibleSeries} />} />
+
+                {/* Garis Batas Standar Voltase SPLN (198V - 242V) */}
+                {visibleSeries.voltage && (
+                  <>
+                    <ReferenceLine 
+                      yAxisId="voltage" 
+                      y={198} 
+                      stroke="#ef4444" 
+                      strokeDasharray="3 3" 
+                      strokeOpacity={0.6} 
+                      label={{ value: 'SPLN Min (198V)', fill: '#ef4444', fontSize: 9, position: 'insideTopLeft' }} 
+                    />
+                    <ReferenceLine 
+                      yAxisId="voltage" 
+                      y={242} 
+                      stroke="#ef4444" 
+                      strokeDasharray="3 3" 
+                      strokeOpacity={0.6} 
+                      label={{ value: 'SPLN Max (242V)', fill: '#ef4444', fontSize: 9, position: 'insideBottomLeft' }} 
+                    />
+                  </>
+                )}
+
+                {/* Garis Seri 1: RPM Kompresor */}
+                {visibleSeries.rpm && (
+                  <Line 
+                    yAxisId="rpm" 
+                    type="monotone" 
+                    dataKey="compressor_rpm" 
+                    stroke="#f97316" 
+                    strokeWidth={2.2} 
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                )}
+
+                {/* Garis Seri 2: Voltase AC Bus (Tersambung ke yAxisId="voltage" mandiri!) */}
+                {visibleSeries.voltage && (
+                  <Line 
+                    yAxisId="voltage" 
+                    type="monotone" 
+                    dataKey="voltage" 
+                    stroke="#f59e0b" 
+                    strokeWidth={2} 
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                )}
+
+                {/* Garis Seri 3: Suhu Ruangan Thermistor */}
+                {visibleSeries.temperature && (
+                  <Line 
+                    yAxisId="env" 
+                    type="monotone" 
+                    dataKey="room_temp" 
+                    stroke="#ef4444" 
+                    strokeWidth={1.8} 
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                )}
+
+                {/* Garis Seri 4: Kelembapan Relatif */}
+                {visibleSeries.humidity && (
+                  <Line 
+                    yAxisId="env" 
+                    type="monotone" 
+                    dataKey="humidity" 
+                    stroke="#06b6d4" 
+                    strokeWidth={1.8} 
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
       </div>
@@ -486,7 +633,7 @@ export default function InverterSignalDashboardPage() {
             <div className="space-y-2 text-xs">
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-slate-400">Kecepatan Kompresor:</span>
-                <span className="font-bold text-electric-orange text-sm">{sig.compressor_rpm.toLocaleString('id-ID')} RPM</span>
+                <span className="font-bold text-electric-orange text-sm">{valRpm.toLocaleString('id-ID')} RPM</span>
               </div>
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-slate-400">Frekuensi Driver Inverter:</span>
