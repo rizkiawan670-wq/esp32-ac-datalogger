@@ -120,7 +120,7 @@ export async function testGeminiApiKey(key) {
           success: true,
           model: model,
           version: ver,
-          message: `Koneksi Berhasil! Model Google Gemini "${model}" (${ver}) aktif dan online.`
+          message: `Koneksi Berhasil! Agent AI aktif dan online.`
         };
       }
     } catch (err) {
@@ -128,7 +128,7 @@ export async function testGeminiApiKey(key) {
     }
   }
 
-  throw lastError || new Error('Gagal memvalidasi API Key ke server Google Gemini.');
+  throw lastError || new Error('Gagal memvalidasi API Key ke server Agent AI.');
 }
 
 // ----------------------------------------------------------------------------
@@ -251,7 +251,7 @@ export const CALIBRATION_TOOLS = [
 // SISTEM INSTRUKSI PAKAR INSTRUMENTASI & AC INVERTER (ONLINE)
 // ----------------------------------------------------------------------------
 const SYSTEM_INSTRUCTION = `
-Anda adalah "AC Datalogger AI Diagnostic Assistant", asisten AI online bertenaga Google Gemini yang merupakan pakar teknik elektro, instrumentasi IoT ESP32, dan sistem pendingin udara (AC Inverter).
+Anda adalah "Agent AI", asisten AI online cerdas yang merupakan pakar teknik elektro, instrumentasi IoT ESP32, dan sistem pendingin udara (AC Inverter).
 
 TUGAS UTAMA:
 1. Menjawab pertanyaan teknis pengguna secara cerdas, ilmiah, dan mendalam.
@@ -292,7 +292,7 @@ export async function sendChatMessage({ prompt, history = [], telemetryContext =
   const activeKey = (apiKey || getStoredGeminiKey() || DEFAULT_GEMINI_API_KEY).trim().replace(/^["']|["']$/g, '');
 
   if (!activeKey) {
-    throw new Error('MISSING_API_KEY: Google Gemini API Key belum dikonfigurasi. Sistem AI Diagnosa beroperasi secara Full AI Online. Silakan masukkan Google Gemini API Key Anda untuk mulai berkonsultasi.');
+    throw new Error('MISSING_API_KEY: API Key belum dikonfigurasi. Sistem Agent AI beroperasi secara Full AI Online. Silakan masukkan API Key Anda untuk mulai berkonsultasi.');
   }
 
   // Format Snapshot Telemetri Terkini untuk disisipkan ke context AI
@@ -419,7 +419,7 @@ SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
           functionCall: functionCallPart.functionCall,
           text: textPart?.text || null,
           source: 'gemini_tool',
-          model: `Google Gemini Online (${model})`,
+          model: 'Agent AI',
         };
       }
 
@@ -431,7 +431,7 @@ SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
         return {
           text: generatedText,
           source: 'gemini',
-          model: `Google Gemini Online (${model})`,
+          model: 'Agent AI',
         };
       }
     } catch (err) {
@@ -441,5 +441,5 @@ SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
   }
 
   // JIKA GAGAL: Lempar error langsung ke UI, TIDAK ADA fallback jawaban lokal!
-  throw new Error(`Google Gemini API Error: ${lastError?.message || 'Gagal menerima respon dari server Google AI'}. Silakan periksa koneksi internet atau kuota API Key Google AI Studio Anda.`);
+  throw new Error(`Koneksi Agent AI Error: ${lastError?.message || 'Gagal menerima respon dari server AI'}. Silakan periksa koneksi internet atau kuota API Key Anda.`);
 }

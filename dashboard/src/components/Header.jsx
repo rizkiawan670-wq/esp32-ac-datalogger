@@ -41,7 +41,7 @@ export default function Header({ currentTab, setCurrentTab }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'history', label: 'Riwayat', icon: History },
     { id: 'analysis', label: 'Analisis', icon: LineChart },
-    { id: 'ai-diagnostics', label: 'AI Diagnosa', icon: Bot, isAi: true },
+    { id: 'ai-diagnostics', label: 'Agent AI', icon: Bot, isAi: true },
     { id: 'devices', label: 'Perangkat', icon: HardDrive },
     { id: 'settings', label: 'Pengaturan', icon: Settings },
     { id: 'guide', label: 'Panduan', icon: BookOpen },

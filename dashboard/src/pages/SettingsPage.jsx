@@ -171,10 +171,10 @@ export default function SettingsPage() {
               <div>
                 <h4 className="text-xs font-mono font-bold text-amber-400 flex items-center">
                   <Sliders className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
-                  Koreksi Offset & Kalibrasi Sensor (Tersinkronisasi Cloud & AI)
+                  Koreksi Offset & Kalibrasi Sensor (Tersinkronisasi Cloud & Agent AI)
                 </h4>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Nilai kalibrasi di bawah ini tersimpan permanen di cloud dan otomatis disinkronkan ke seluruh perangkat. Anda juga dapat mengubahnya otomatis via perintah chat di menu AI Diagnosa.
+                  Nilai kalibrasi di bawah ini tersimpan permanen di cloud dan otomatis disinkronkan ke seluruh perangkat. Anda juga dapat mengubahnya otomatis via perintah chat di menu Agent AI.
                 </p>
               </div>
               <button

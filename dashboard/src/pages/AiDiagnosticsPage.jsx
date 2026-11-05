@@ -72,13 +72,13 @@ export default function AiDiagnosticsPage() {
       {
         id: 'welcome',
         role: 'assistant',
-        text: `### 🤖 Halo! Saya Asisten AI Online AC Datalogger.
-Saya beroperasi secara **100% Full AI Online bertenaga Google Gemini API** untuk membantu Anda menganalisis telemetri tegangan True-RMS, putaran kompresor (RPM), kondisi termal ruangan, serta menjawab pertanyaan teknis alur proses sistem secara mendalam.
+        text: `### 🤖 Halo! Saya Agent AI AC Datalogger.
+Saya beroperasi secara **100% Full AI Online** untuk membantu Anda menganalisis telemetri tegangan True-RMS, putaran kompresor (RPM), kondisi termal ruangan, serta melakukan kalibrasi sensor otomatis langsung via chat.
 
-Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
+Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:`,
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         source: 'gemini',
-        model: 'Google Gemini Online Co-Pilot'
+        model: 'Agent AI'
       }
     ];
   });
@@ -141,7 +141,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
       const res = await testGeminiApiKey(cleanKey);
       setKeyTestFeedback({ 
         success: true, 
-        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model} ${res.version || ''}). Kunci telah otomatis disimpan dan aktif online!` 
+        message: `✅ Kunci Valid! Terhubung ke Agent AI (${res.model} ${res.version || ''}). Kunci telah otomatis disimpan dan aktif online!` 
       });
       saveStoredGeminiKey(cleanKey);
       setHasApiKey(true);
@@ -191,10 +191,10 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
         {
           id: `missing_key_${Date.now()}`,
           role: 'assistant',
-          text: `⚠️ **Google Gemini API Key Belum Dikonfigurasi**\n\nSistem AI Diagnosa beroperasi **100% Full AI Online** menggunakan Google Gemini AI tanpa jawaban lokal/hardcoded.\n\nSilakan masukkan **Google Gemini API Key** Anda untuk mengaktifkan kecerdasan generatif online. Anda bisa mendapatkan API Key gratis di [Google AI Studio](https://aistudio.google.com/app/apikey).`,
+          text: `⚠️ **API Key Belum Dikonfigurasi**\n\nSistem Agent AI beroperasi **100% Full AI Online** tanpa jawaban lokal/hardcoded.\n\nSilakan masukkan **API Key** Anda untuk mengaktifkan kecerdasan online. Anda bisa mendapatkan API Key gratis di [Google AI Studio](https://aistudio.google.com/app/apikey).`,
           timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
           source: 'warning',
-          model: 'Google Gemini (Perlu API Key)'
+          model: 'Agent AI (Perlu API Key)'
         }
       ]);
       setInputPrompt('');
@@ -277,10 +277,10 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
         {
           id: `error_${Date.now()}`,
           role: 'assistant',
-          text: `❌ **Gagal Terhubung ke Google Gemini Online:**\n\n\`${err.message}\`\n\n> Pastikan perangkat Anda terhubung ke internet dan API Key memiliki izin akses aktif di Google AI Studio. Klik tombol **Pengaturan API Key** di atas untuk menguji atau memperbarui kunci.`,
+          text: `❌ **Gagal Terhubung ke Agent AI Online:**\n\n\`${err.message}\`\n\n> Pastikan perangkat Anda terhubung ke internet dan API Key memiliki izin akses aktif. Klik tombol **Pengaturan API Key** di atas untuk menguji atau memperbarui kunci.`,
           timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
           source: 'error',
-          model: 'Google Gemini Error'
+          model: 'Agent AI Error'
         }
       ]);
     } finally {
@@ -430,7 +430,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
             <div>
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg sm:text-xl font-black text-white font-mono tracking-wide">
-                  AI DIAGNOSTIK & KONSULTASI SISTEM
+                  AGENT AI - ASISTEN DIAGNOSTIK & KALIBRASI
                 </h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40 flex items-center space-x-1">
                   <Sparkles className="w-3 h-3 text-purple-400 mr-1" />
@@ -438,7 +438,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                100% bertenaga model resmi <strong>Google Gemini API</strong>. Analisis telemetri AC True-RMS, dinamika kompresor inverter, dan panduan teknis cerdas secara online.
+                Asisten cerdas <strong>Agent AI</strong> untuk analisis telemetri AC True-RMS, kalibrasi sensor otomatis, dan panduan teknis mendalam secara online.
               </p>
             </div>
           </div>
@@ -459,13 +459,13 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
                   ? 'bg-emerald-950/60 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/50 shadow-sm shadow-emerald-950'
                   : 'bg-amber-950/60 border-amber-500/70 text-amber-300 hover:bg-amber-900/50 animate-pulse'
               }`}
-              title="Atur Google Gemini API Key"
+              title="Atur API Key Agent AI"
             >
               <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-amber-400'}`} />
               {hasApiKey ? (
                 <span className="flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="font-bold">Gemini Online Aktif</span>
+                  <span className="font-bold">Agent AI Aktif</span>
                 </span>
               ) : (
                 <span className="flex items-center space-x-1.5">
@@ -495,10 +495,10 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
               <span className="font-bold text-amber-300 font-mono block">
-                MODE FULL AI ONLINE MEMERLUKAN GOOGLE GEMINI API KEY
+                MODE FULL AI ONLINE MEMERLUKAN API KEY
               </span>
               <p className="text-slate-300 mt-0.5">
-                Sistem beroperasi 100% online dengan Google Gemini tanpa jawaban lokal/hardcoded. Masukkan API Key gratis dari Google AI Studio untuk mengaktifkan AI.
+                Sistem beroperasi 100% online dengan Agent AI tanpa jawaban lokal/hardcoded. Masukkan API Key gratis dari Google AI Studio untuk mengaktifkan AI.
               </p>
             </div>
           </div>
@@ -653,10 +653,10 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
                           : 'text-amber-400 font-semibold'
                       }`}>
                         <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' || msg.source === 'gemini_tool' ? 'text-emerald-400' : 'text-amber-400'}`} />
-                        <span>{msg.model}</span>
+                        <span>{msg.model ? msg.model.replace(/Google Gemini Online( \([^)]+\))?/gi, 'Agent AI').replace(/Google Gemini( Co-Pilot)?/gi, 'Agent AI') : 'Agent AI'}</span>
                         {(msg.source === 'gemini' || msg.source === 'gemini_tool') && (
                           <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/50 font-bold">
-                            {msg.source === 'gemini_tool' ? '⚡ KALIBRASI AI AKTIF' : 'FULL AI ONLINE'}
+                            {msg.source === 'gemini_tool' ? '⚡ KALIBRASI AI AKTIF' : 'ONLINE'}
                           </span>
                         )}
                       </span>
@@ -767,7 +767,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
               </div>
               <div className="bg-industrial-950 border border-industrial-800 rounded-2xl rounded-tl-none px-4 py-3 text-xs sm:text-sm text-slate-300 flex items-center space-x-2">
                 <RotateCw className="w-4 h-4 animate-spin text-electric-orange" />
-                <span>Menghubungi Google Gemini AI Online & menganalisis telemetri...</span>
+                <span>Agent AI sedang menganalisis telemetri & memproses respons...</span>
               </div>
             </div>
           )}
@@ -788,7 +788,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
               type="text"
               value={inputPrompt}
               onChange={(e) => setInputPrompt(e.target.value)}
-              placeholder="Tanyakan apa saja ke Google Gemini AI (Full Online)..."
+              placeholder="Tanyakan analisis atau berikan perintah kalibrasi ke Agent AI..."
               disabled={isGenerating}
               className="flex-1 bg-industrial-900 border border-industrial-800 focus:border-electric-orange focus:ring-1 focus:ring-electric-orange rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 outline-none transition-all font-sans"
             />
@@ -802,14 +802,14 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
             </button>
           </form>
           <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-2 px-1">
-            <span>Tekan Enter untuk mengirim pertanyaan.</span>
-            <span>100% Full AI Online didukung Google Gemini Cloud API.</span>
+            <span>Tekan Enter untuk mengirim pesan.</span>
+            <span>100% Full AI Online bertenaga Agent AI.</span>
           </div>
         </div>
 
       </div>
 
-      {/* 6. MODAL KONFIGURASI GEMINI API KEY */}
+      {/* 6. MODAL KONFIGURASI API KEY */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
           <div className="bg-industrial-900 border border-industrial-700 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl relative">
@@ -819,7 +819,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
               <div className="flex items-center space-x-2">
                 <Key className="w-5 h-5 text-electric-orange" />
                 <h3 className="text-base font-bold text-white font-mono">
-                  PENGATURAN GOOGLE GEMINI API KEY
+                  PENGATURAN AGENT AI API KEY
                 </h3>
               </div>
               <button
@@ -833,7 +833,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
             {/* Modal Body */}
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed font-sans">
               <p>
-                Sistem AI Diagnosa beroperasi <strong>100% Full AI Online</strong> menggunakan model resmi <strong>Google Gemini</strong>. Tidak ada jawaban lokal atau offline yang digunakan.
+                Sistem <strong>Agent AI</strong> beroperasi <strong>100% Full AI Online</strong> tanpa jawaban lokal atau offline yang digunakan.
               </p>
 
               <div className="p-3 bg-industrial-950 border border-industrial-800 rounded-lg space-y-1.5">
@@ -857,7 +857,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
               {/* Input Form & Test Button */}
               <div className="space-y-2 pt-1">
                 <label className="block text-xs font-mono text-slate-300">
-                  Google Gemini API Key:
+                  Agent AI API Key:
                 </label>
                 <div className="flex items-center space-x-2">
                   <input
