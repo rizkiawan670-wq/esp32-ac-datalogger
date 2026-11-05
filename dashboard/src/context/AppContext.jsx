@@ -1,8 +1,10 @@
 // ============================================================================
 // APPLICATION STATE CONTEXT
-// Mengelola koneksi Supabase Realtime, buffer data grafik 1-detik,
-// status perangkat ESP32, generator simulasi, ambang batas kelistrikan AC,
-// dan sinkronisasi kalibrasi multi-device real-time.
+// Mengelola:
+// 1. Sistem Autentikasi Akun (Datalogger Proyek 1 & Inverter Signal Proyek 2)
+// 2. Koneksi Supabase Realtime & Buffer Telemetri AC Listrik (True-RMS ZMPT101B & SHT31)
+// 3. Telemetri KABEL SINYAL INVERTER (Terminal 3 Sharp AH-XP13DPY / Universal Inverter)
+// 4. Komparasi Sensor ESP32 vs Data Kabel Sinyal
 // ============================================================================
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -24,6 +26,72 @@ const DEFAULT_SETTINGS = {
 };
 
 export function AppProvider({ children }) {
+  // --------------------------------------------------------------------------
+  // 1. SISTEM AUTENTIKASI PENGGUNA (ROLE BASED PROJECT NAVIGATION)
+  // --------------------------------------------------------------------------
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('ac_auth_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (_e) {}
+    }
+    return null; // Tampilkan Login Page jika belum ada sesi aktif
+  });
+
+  const login = useCallback((username, password) => {
+    const u = (username || '').trim().toLowerCase();
+
+    if (u === 'datalogger' || u === 'user1' || u === 'proyek1') {
+      const user = {
+        username: 'datalogger',
+        role: 'datalogger',
+        name: 'Teknisi AC Datalogger',
+        projectTitle: 'VoltAir Datalogger (Proyek 1)',
+        description: 'Telemetri Tegangan Listrik True-RMS (ZMPT101B), Suhu & Kelembapan SHT31, Analisis Termal & Agent AI.',
+        badgeColor: 'bg-electric-amber/20 text-electric-amber border-electric-amber/40'
+      };
+      setCurrentUser(user);
+      localStorage.setItem('ac_auth_user', JSON.stringify(user));
+      return { success: true, user };
+    }
+
+    if (u === 'inverter' || u === 'sinyal' || u === 'user2' || u === 'proyek2') {
+      const user = {
+        username: 'inverter',
+        role: 'inverter',
+        name: 'Spesialis Sinyal Inverter',
+        projectTitle: 'Inverter Signal Bus Analyzer (Proyek 2)',
+        description: 'Sniffer Data Serial Terminal 3 (Sharp AH-XP13DPY), RPM Kompresor, 5 Thermistor, EEV & Komparasi Sensor ESP32.',
+        badgeColor: 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
+      };
+      setCurrentUser(user);
+      localStorage.setItem('ac_auth_user', JSON.stringify(user));
+      return { success: true, user };
+    }
+
+    return { 
+      success: false, 
+      error: 'Username tidak dikenal. Gunakan "datalogger" untuk Proyek 1 atau "inverter" untuk Proyek 2.' 
+    };
+  }, []);
+
+  const logout = useCallback(() => {
+    setCurrentUser(null);
+    localStorage.removeItem('ac_auth_user');
+  }, []);
+
+  const switchProject = useCallback((targetRole) => {
+    if (targetRole === 'datalogger') {
+      login('datalogger', '');
+    } else {
+      login('inverter', '');
+    }
+  }, [login]);
+
+  // --------------------------------------------------------------------------
+  // 2. DEVICE & TELEMETRI STATUS
+  // --------------------------------------------------------------------------
   const [selectedDeviceId, setSelectedDeviceId] = useState(() => {
     return localStorage.getItem('ac_datalogger_device_id') || 
            import.meta.env.VITE_DEFAULT_DEVICE_ID || 
@@ -40,16 +108,20 @@ export function AppProvider({ children }) {
     return [
       {
         device_id: 'esp32-ac-01',
-        name: 'ESP32 AC Datalogger Unit 01 (Server Room)',
+        name: 'ESP32 AC Datalogger Unit 01 (Sharp AH-XP13DPY)',
         calibrated: false,
         last_seen_at: null,
       }
     ];
   });
 
-  // Telemetri AC Listrik & SHT31
+  // Telemetri AC Listrik & SHT31 (Sensor Fisik ESP32)
   const [latestReading, setLatestReading] = useState(null);
   const [realtimeBuffer, setRealtimeBuffer] = useState([]);
+
+  // Telemetri KABEL SINYAL INVERTER TERMINAL 3 (Proyek 2)
+  const [latestSignalReading, setLatestSignalReading] = useState(null);
+  const [signalRealtimeBuffer, setSignalRealtimeBuffer] = useState([]);
 
   const [dbStatus, setDbStatus] = useState('connecting'); // 'connected' | 'disconnected' | 'unconfigured'
   const [isDeviceOnline, setIsDeviceOnline] = useState(false);
@@ -89,6 +161,7 @@ export function AppProvider({ children }) {
     setSelectedDeviceId(deviceId);
     localStorage.setItem('ac_datalogger_device_id', deviceId);
     setRealtimeBuffer([]);
+    setSignalRealtimeBuffer([]);
   }, []);
 
   // Update dan simpan parameter perangkat ke memory & localStorage
@@ -107,11 +180,10 @@ export function AppProvider({ children }) {
     localStorage.setItem('ac_datalogger_simulation', String(nextVal));
   }, [isSimulating]);
 
-  // Tambahkan pembacaan telemetri AC baru ke buffer
+  // Tambahkan pembacaan telemetri AC baru ke buffer (Sensor Fisik ESP32)
   const appendReading = useCallback((reading) => {
     if (isStreamPaused) return;
 
-    // Terapkan koreksi kalibrasi offset jika disetel teknisi atau AI Agent
     const vOffset = Number(settings.voltageTrimOffset) || 0;
     const tOffset = Number(settings.tempTrimOffset) || 0;
     const hOffset = Number(settings.humidityTrimOffset) || 0;
@@ -154,15 +226,34 @@ export function AppProvider({ children }) {
     });
   }, [isStreamPaused, settings.bufferLimit, settings.voltageTrimOffset, settings.tempTrimOffset, settings.humidityTrimOffset]);
 
+  // Tambahkan pembacaan kabel data sinyal (Terminal 3 Sharp / Universal)
+  const appendSignalReading = useCallback((signalReading) => {
+    if (isStreamPaused || !signalReading) return;
+
+    setLatestSignalReading(signalReading);
+    latestTimestampRef.current = Date.now();
+    setSecondsSinceLastPacket(0);
+    setIsDeviceOnline(true);
+
+    setSignalRealtimeBuffer((prev) => {
+      const updated = [...prev, signalReading];
+      if (updated.length > settings.bufferLimit) {
+        return updated.slice(updated.length - settings.bufferLimit);
+      }
+      return updated;
+    });
+  }, [isStreamPaused, settings.bufferLimit]);
+
   // Reset buffer data grafik lokal (RAM)
   const resetChartBuffer = useCallback(() => {
     setRealtimeBuffer([]);
+    setSignalRealtimeBuffer([]);
   }, []);
 
   // Reset seluruh data tersimpan (Buffer lokal + Database Supabase)
   const resetStoredData = useCallback(async (includeDatabase = true) => {
-    // 1. Kosongkan state buffer lokal seketika
     setRealtimeBuffer([]);
+    setSignalRealtimeBuffer([]);
 
     if (!includeDatabase) {
       return { success: true, message: 'Buffer grafik lokal berhasil dibersihkan.' };
@@ -174,7 +265,6 @@ export function AppProvider({ children }) {
     }
 
     try {
-      // Panggil Stored Procedure reset_device_telemetry
       const { data, error } = await client.rpc('reset_device_telemetry', {
         p_device_id: selectedDeviceId,
       });
@@ -185,6 +275,7 @@ export function AppProvider({ children }) {
       }
 
       setLatestReading(null);
+      setLatestSignalReading(null);
 
       return { 
         success: true, 
@@ -217,7 +308,7 @@ export function AppProvider({ children }) {
   }, []);
 
   // --------------------------------------------------------------------------
-  // MODE SIMULASI REALISTIS (AC TEGANGAN + SHT31 SUHU & KELEMBAPAN)
+  // MODE SIMULASI REALISTIS (SENSOR FISIK ESP32 & KABEL SINYAL INVERTER)
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (!isSimulating) {
@@ -233,7 +324,7 @@ export function AppProvider({ children }) {
       simStep++;
       const nowIso = new Date().toISOString();
 
-      // Simulasi PLN True-RMS & Suhu SHT31
+      // 1. SENSOR FISIK ESP32: ZMPT101B True-RMS & SHT31
       const baseV = 220.0 + 3.0 * Math.sin(simStep * 0.1) + (Math.random() - 0.5) * 1.5;
       const cyclePos = (simStep % 120) / 120;
       const baseTemp = 24.5 - 3.5 * Math.sin(cyclePos * Math.PI) + (Math.random() - 0.5) * 0.2;
@@ -251,6 +342,65 @@ export function AppProvider({ children }) {
       };
       appendReading(simReading);
 
+      // 2. KABEL SINYAL TERMINAL 3 SHARP INVERTER (AH-XP13DPY / Universal Protocol)
+      const targetCompressorRpm = 1200 + Math.sin(simStep * 0.08) * 1300 + 750; // 1300 - 3250 RPM
+      const inverterFreq = Math.round(((targetCompressorRpm * 4) / 120) * 10) / 10;
+      const roomThermistorTemp = baseTemp + 0.35 + (Math.random() - 0.5) * 0.15; // Thermistor udara ruang
+      const indoorCoilTemp = 9.8 + Math.sin(simStep * 0.05) * 2.2; // Thermistor pipa dingin evaporator
+      const outdoorAmbientTemp = 32.5 + Math.sin(simStep * 0.03) * 1.4; // Thermistor outdoor ambient
+      const outdoorCoilTemp = 41.2 + Math.sin(simStep * 0.04) * 2.8; // Thermistor kondensor
+      const dischargeTemp = 72.0 + (targetCompressorRpm / 3300) * 19.0 + (Math.random() - 0.5) * 1.2; // Discharge kompresor
+      const eevStep = Math.round(140 + (targetCompressorRpm / 3300) * 170 + Math.sin(simStep * 0.1) * 8); // EEV steps (0-480)
+      const indoorFanRpm = targetCompressorRpm > 2400 ? 920 : (targetCompressorRpm > 1800 ? 820 : 680);
+      const outdoorFanRpm = targetCompressorRpm > 2000 ? 780 : 620;
+
+      // Raw frame hex Sharp J-Tech
+      const hexBytes = [
+        'AA', '55', '14',
+        Math.round(inverterFreq).toString(16).padStart(2, '0').toUpperCase(),
+        Math.round(roomThermistorTemp).toString(16).padStart(2, '0').toUpperCase(),
+        Math.round(indoorCoilTemp).toString(16).padStart(2, '0').toUpperCase(),
+        Math.round(outdoorAmbientTemp).toString(16).padStart(2, '0').toUpperCase(),
+        Math.round(outdoorCoilTemp).toString(16).padStart(2, '0').toUpperCase(),
+        Math.round(dischargeTemp).toString(16).padStart(2, '0').toUpperCase(),
+        (eevStep & 0xFF).toString(16).padStart(2, '0').toUpperCase(),
+        ((eevStep >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase(),
+        '00', 'B4'
+      ].join(' ');
+
+      const simSignalReading = {
+        id: `sim-sig-${simStep}`,
+        device_id: selectedDeviceId,
+        measured_at: nowIso,
+        model_name: 'Sharp AH-XP13DPY J-Tech Inverter (1.5 PK)',
+        voltage_v: Math.round((baseV - 0.3) * 10) / 10,
+        room_temp_c: Math.round(roomThermistorTemp * 10) / 10,
+        humidity_rh: Math.round(baseHum * 10) / 10,
+        compressor_rpm: Math.round(targetCompressorRpm),
+        inverter_freq_hz: inverterFreq,
+        target_temp_c: 24.0,
+        indoor_coil_temp_c: Math.round(indoorCoilTemp * 10) / 10,
+        outdoor_ambient_temp_c: Math.round(outdoorAmbientTemp * 10) / 10,
+        outdoor_coil_temp_c: Math.round(outdoorCoilTemp * 10) / 10,
+        discharge_pipe_temp_c: Math.round(dischargeTemp * 10) / 10,
+        eev_steps: eevStep,
+        eev_max_steps: 480,
+        fan_speed_indoor: targetCompressorRpm > 2400 ? 'HIGH' : (targetCompressorRpm > 1800 ? 'MED' : 'LOW'),
+        fan_speed_indoor_rpm: indoorFanRpm,
+        fan_speed_outdoor_rpm: outdoorFanRpm,
+        operating_mode: 'COOL',
+        compressor_status: targetCompressorRpm > 400 ? 'RUNNING' : 'OFF',
+        defrost_status: 'OFF',
+        four_way_valve: 'OFF (Cooling Mode)',
+        error_code: '00',
+        error_description: 'Normal Operation (Sistem Sehat)',
+        signal_status: 'LOCKED (UART 2400-8E1)',
+        baudrate: '2400 bps',
+        packet_raw_hex: hexBytes,
+        is_simulated: true,
+      };
+      appendSignalReading(simSignalReading);
+
     }, 1000);
 
     return () => {
@@ -258,12 +408,11 @@ export function AppProvider({ children }) {
         clearInterval(simulationTimerRef.current);
       }
     };
-  }, [isSimulating, selectedDeviceId, appendReading]);
+  }, [isSimulating, selectedDeviceId, appendReading, appendSignalReading]);
 
   // --------------------------------------------------------------------------
   // KALIBRASI CLOUD PERSISTENCE & REALTIME MULTI-DEVICE SYNCHRONIZATION
   // --------------------------------------------------------------------------
-  // Simpan kalibrasi secara permanen ke Supabase Database & Broadcast ke semua device
   const persistCalibrationToCloud = useCallback(async (calSettings) => {
     const client = getSupabaseClient();
     let cloudSaved = false;
@@ -282,7 +431,6 @@ export function AppProvider({ children }) {
 
     if (client) {
       try {
-        // Simpan permanen ke tabel konfigurasi
         const { error } = await client
           .from('compressor_profiles')
           .update({
@@ -299,7 +447,6 @@ export function AppProvider({ children }) {
         console.warn('Gagal menyimpan kalibrasi ke Supabase:', e);
       }
 
-      // Broadcast ke semua tab/browser/perangkat yang sedang terhubung
       try {
         const channel = syncChannelRef.current || client.channel('system_calibration_sync');
         await channel.send({
@@ -447,7 +594,6 @@ export function AppProvider({ children }) {
       };
     }
 
-    // Simpan permanen ke Supabase Cloud & Broadcast ke semua layar/koneksi aktif
     const { cloudSaved } = await persistCalibrationToCloud(updatedSettings);
     result.cloudSaved = cloudSaved;
 
@@ -485,7 +631,6 @@ export function AppProvider({ children }) {
             const parsedNotes = JSON.parse(profData.notes);
             if (parsedNotes && parsedNotes.calibration) {
               const cal = parsedNotes.calibration;
-              console.log('📥 Memuat kalibrasi permanen dari Supabase Cloud:', cal);
               effectiveSettings = {
                 ...effectiveSettings,
                 voltageTrimOffset: cal.voltageTrimOffset !== undefined ? Number(cal.voltageTrimOffset) : effectiveSettings.voltageTrimOffset,
@@ -588,8 +733,6 @@ export function AppProvider({ children }) {
 
   // --------------------------------------------------------------------------
   // SUPABASE REALTIME SUBSCRIPTION
-  // Berlangganan event INSERT pada tabel ac_readings
-  // Serta channel broadcast system_calibration_sync untuk update instan multi-device
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (isSimulating) {
@@ -647,8 +790,6 @@ export function AppProvider({ children }) {
       .on('broadcast', { event: 'CALIBRATION_UPDATE' }, (payload) => {
         if (payload && payload.payload && payload.payload.calibration) {
           const cal = payload.payload.calibration;
-          console.log('⚡ Sinkronisasi Kalibrasi Real-time Diterima dari Perangkat Lain / AI:', cal);
-
           setSettings((prev) => {
             const merged = {
               ...prev,
@@ -674,11 +815,17 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider
       value={{
+        currentUser,
+        login,
+        logout,
+        switchProject,
         selectedDeviceId,
         changeSelectedDevice,
         devices,
         latestReading,
         realtimeBuffer,
+        latestSignalReading,
+        signalRealtimeBuffer,
         dbStatus,
         isDeviceOnline,
         secondsSinceLastPacket,

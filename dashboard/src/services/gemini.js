@@ -276,12 +276,28 @@ export async function sendChatMessage({ prompt, history = [], telemetryContext =
 SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
 - Perangkat ID: ${telemetryContext.deviceId || 'ESP32_AC_01'}
 - Status Konektivitas: ${telemetryContext.isOnline ? 'ONLINE' : 'OFFLINE'}
-- Tegangan AC True-RMS: ${telemetryContext.voltage ? Number(telemetryContext.voltage).toFixed(1) : 0} Volt RMS (Offset Kalibrasi Aktif: ${telemetryContext.settings?.voltageTrimOffset || 0}V, Normal SPLN: 198V - 242V)
-- Suhu Udara AC: ${telemetryContext.temperature ? Number(telemetryContext.temperature).toFixed(1) : 0} °C (Offset Kalibrasi Aktif: ${telemetryContext.settings?.tempTrimOffset || 0}°C)
-- Kelembapan Relatif: ${telemetryContext.humidity ? Number(telemetryContext.humidity).toFixed(1) : 0} %RH (Offset Kalibrasi Aktif: ${telemetryContext.settings?.humidityTrimOffset || 0}%RH)
+- Tegangan AC True-RMS: ${telemetryContext.voltage ? Number(telemetryContext.voltage).toFixed(1) : 0} Volt RMS (Offset Kalibrasi: ${telemetryContext.settings?.voltageTrimOffset || 0}V)
+- Suhu Sensor Fisik ESP32: ${telemetryContext.temperature ? Number(telemetryContext.temperature).toFixed(1) : 0} °C (Offset: ${telemetryContext.settings?.tempTrimOffset || 0}°C)
+- Kelembapan Relatif ESP32: ${telemetryContext.humidity ? Number(telemetryContext.humidity).toFixed(1) : 0} %RH (Offset: ${telemetryContext.settings?.humidityTrimOffset || 0}%RH)
 - Titik Embun (Dew Point): ${telemetryContext.dewPoint !== null && telemetryContext.dewPoint !== undefined ? Number(telemetryContext.dewPoint).toFixed(1) : '--'} °C
 - Ambang Batas Tegangan: Low=${telemetryContext.settings?.voltageLow || 198}V, High=${telemetryContext.settings?.voltageHigh || 242}V
 `;
+
+    if (telemetryContext.signalData) {
+      const s = telemetryContext.signalData;
+      liveTelemetryBlock += `
+DATA DEKODE KABEL SINYAL INVERTER (TERMINAL 3):
+- RPM Kompresor: ${s.compressor_rpm || 0} RPM (Target: ${s.target_rpm || 0} RPM, Frekuensi: ${s.inverter_freq_hz || 0} Hz)
+- Suhu Ruangan (Thermistor AC): ${s.room_temp !== undefined ? s.room_temp : '--'} °C
+- Suhu Pipa Discharge: ${s.discharge_pipe_temp !== undefined ? s.discharge_pipe_temp : '--'} °C
+- Suhu Evaporator Indoor Coil: ${s.indoor_coil_temp !== undefined ? s.indoor_coil_temp : '--'} °C
+- Suhu Kondensor Outdoor Coil: ${s.outdoor_coil_temp !== undefined ? s.outdoor_coil_temp : '--'} °C
+- Katup Ekspansi Elektronik (EEV): ${s.eev_steps || '--'} langkah
+- Kipas Indoor: ${s.indoor_fan_rpm || '--'} RPM | Outdoor: ${s.outdoor_fan_rpm || '--'} RPM
+- Kode Status / Self-Diagnosis: ${s.error_code || '00'} (${s.error_code === '00' ? 'Normal' : 'Error Terdeteksi'})
+- Mode Operasi: ${s.mode || 'COOL'}
+`;
+    }
   }
 
   const userFullPrompt = liveTelemetryBlock 

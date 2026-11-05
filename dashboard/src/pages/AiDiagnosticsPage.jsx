@@ -42,12 +42,16 @@ import {
 
 export default function AiDiagnosticsPage() {
   const {
+    currentUser,
     selectedDeviceId,
     latestReading,
+    latestSignalReading,
     isDeviceOnline,
     settings,
     applyAiCalibration,
   } = useApp();
+
+  const isProjectInverter = currentUser?.role === 'inverter';
 
   // State Modal Konfigurasi API Key
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -108,7 +112,8 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
     temperature: currentTemp,
     humidity: currentHumidity,
     dewPoint: currentDewPoint,
-    settings: settings
+    settings: settings,
+    signalData: latestSignalReading || null
   };
 
   // Simpan API Key
@@ -283,8 +288,39 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
     }
   };
 
-  // Quick Prompt Chips (Termasuk Kalibrasi Cepat Otomatis)
-  const quickPrompts = [
+  // Quick Prompt Chips (Disesuaikan dengan Proyek yang Sedang Dibuka)
+  const quickPrompts = isProjectInverter ? [
+    {
+      icon: Activity,
+      label: '🌀 Analisis Kompresor & EEV',
+      query: 'Bagaimana status dinamika kompresor, frekuensi inverter saat ini, dan bukaan katup EEV dari data kabel sinyal?'
+    },
+    {
+      icon: AlertTriangle,
+      label: '⚠️ Cek Kode Error Unit',
+      query: 'Periksa kode error unit pada paket sinyal serial saat ini. Apakah ada gangguan sensor, kompresor, atau komunikasi?'
+    },
+    {
+      icon: Layers,
+      label: '📊 Komparasi SHT31 vs Thermistor',
+      query: 'Bandingkan suhu dan kelembapan dari sensor ESP32 vs data thermistor internal yang diterima dari kabel sinyal AC.'
+    },
+    {
+      icon: Thermometer,
+      label: '🔥 Evaluasi Suhu Discharge Pipe',
+      query: 'Evaluasi suhu pipa discharge kompresor dari kabel sinyal saat ini. Apakah ada indikasi overheating atau kekurangan refrigeran?'
+    },
+    {
+      icon: Zap,
+      label: '⚡ Kalibrasi Voltase (+5V)',
+      query: 'Multimeter saya terbaca 225V sedangkan dashboard terbaca 220V, tolong kalibrasi voltase agar sesuai multimeter.'
+    },
+    {
+      icon: Trash2,
+      label: '⚙️ Reset Kalibrasi',
+      query: 'Tolong reset semua parameter kalibrasi sensor ke standar pabrik / default 0.'
+    }
+  ] : [
     {
       icon: Zap,
       label: '⚡ Kalibrasi Voltase (+5V)',
@@ -299,11 +335,6 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
       icon: Droplets,
       label: '💧 Kalibrasi Kelembaban (+4%)',
       query: 'Higrometer saya terbaca 62% sedangkan di dashboard 58%, tolong kalibrasi kelembaban.'
-    },
-    {
-      icon: RotateCw,
-      label: '🔄 Kompresor 6-Pole',
-      query: 'Tolong ubah setting kutub kompresor menjadi 6-pole (LG Twin Rotary).'
     },
     {
       icon: Trash2,

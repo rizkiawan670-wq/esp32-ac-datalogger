@@ -42,6 +42,7 @@ export default function GuidePage() {
             { id: 'wiring', label: '2. Wiring AC' },
             { id: 'calibration', label: '3. Kalibrasi True-RMS' },
             { id: 'deployment', label: '4. Deployment' },
+            { id: 'sniffer', label: '5. Sniffer Sinyal Terminal 3' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -360,6 +361,75 @@ export default function GuidePage() {
                   </li>
                   <li>Deploy selesai! Dashboard dapat diakses dari browser HP dan laptop kapan saja.</li>
                 </ol>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: SNIFFER KABEL SINYAL INVERTER TERMINAL 3 (PROYEK 2) */}
+      {activeTab === 'sniffer' && (
+        <div className="space-y-5">
+          <div className="p-4 rounded-xl bg-cyan-950/40 border border-cyan-500/50 text-cyan-200 text-xs shadow-md">
+            <div className="flex items-start space-x-3">
+              <Cpu className="w-6 h-6 text-cyan-400 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1.5">
+                <h3 className="font-bold text-sm text-cyan-300 font-mono uppercase">
+                  PANDUAN WIRING SNIFFER KABEL SINYAL SERIAL (TERMINAL 3)
+                </h3>
+                <p className="text-slate-200 leading-relaxed">
+                  Terminal 3 pada unit AC Inverter (seperti Sharp J-Tech Inverter AH-XP13DPY, Daikin, Gree, Panasonic) membawa sinyal komunikasi serial digital bolak-balik antara PCB Indoor dan Outdoor. 
+                  Sinyal ini memuat seluruh data internal AC: frekuensi kerja kompresor, RPM kipas, 5 sensor suhu thermistor, katup ekspansi EEV, dan kode error diagnosis.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg space-y-4">
+            <h4 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center">
+              <Zap className="w-4 h-4 mr-2 text-cyan-400" />
+              Arsitektur Sirkuit Optocoupler Isolation Detect Sensor:
+            </h4>
+
+            <div className="space-y-3 text-xs font-sans">
+              <div className="p-4 bg-industrial-950 rounded-lg border border-industrial-800 space-y-2">
+                <span className="font-mono font-bold text-amber-400 text-sm block">
+                  1. Bahaya Tegangan Bus Sinyal Terminal 3
+                </span>
+                <p className="text-slate-300 leading-relaxed">
+                  Kabel sinyal Terminal 3 memiliki referensi tegangan terhadap Netral (Terminal 2) sebesar <strong>24V DC hingga 140V/220V</strong> tergantung merk dan siklus transmisi.
+                  <strong> JANGAN PERNAH menghubungkan kabel Terminal 3 langsung ke pin GPIO ESP32!</strong> Hal ini akan membakar ESP32 seketika.
+                </p>
+              </div>
+
+              <div className="p-4 bg-industrial-950 rounded-lg border border-industrial-800 space-y-2">
+                <span className="font-mono font-bold text-emerald-400 text-sm block">
+                  2. Skema Sambungan Modul Isolasi Optocoupler
+                </span>
+                <div className="bg-industrial-900 p-3 rounded border border-industrial-800 font-mono text-slate-300 space-y-1">
+                  <p className="text-cyan-300 font-bold">// SISI TEGANGAN TINGGI (AC TERMINAL BUS):</p>
+                  <p>• Terminal 3 (Kabel Sinyal AC) &rarr; Resistor Pembatas Arus (10k&Omega; - 47k&Omega; 2W) &rarr; Dioda Rectifier &rarr; Anoda Optocoupler</p>
+                  <p>• Terminal 2 (Netral AC) &rarr; Katoda Optocoupler</p>
+                  <p className="text-cyan-300 font-bold pt-2">// SISI LOGIKA ESP32 (ISOLASI GALVANIK 3.3V):</p>
+                  <p>• VCC Modul Optocoupler &rarr; Pin 3V3 ESP32</p>
+                  <p>• GND Modul Optocoupler &rarr; Pin GND ESP32</p>
+                  <p>• OUT Modul Optocoupler &rarr; Pin GPIO 16 (ESP32 Serial2 RX2)</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-industrial-950 rounded-lg border border-industrial-800 space-y-2">
+                <span className="font-mono font-bold text-cyan-400 text-sm block">
+                  3. Format Paket Serial & Baudrate
+                </span>
+                <ul className="list-disc list-inside space-y-1 text-slate-300">
+                  <li><strong>Baudrate:</strong> 9600 bps atau 2400 bps (8-N-1: 8 data bits, no parity, 1 stop bit).</li>
+                  <li><strong>Header Paket:</strong> <code>0x5A 0xA5</code> atau <code>0xAA 0x55</code> sebagai penanda awal frame.</li>
+                  <li><strong>Payload Byte:</strong> 
+                    <span className="text-slate-400"> Byte 0: Panjang Data, Byte 1: Mode Kerja, Byte 2-3: RPM Kompresor, Byte 4: Suhu Pipa Discharge, Byte 5: Suhu Indoor Coil, Byte 6: Suhu Outdoor Coil, Byte 7-8: EEV Steps, Byte 9: Kode Error.</span>
+                  </li>
+                  <li><strong>Checksum:</strong> Verifikasi CRC / Sum of Bytes di akhir paket untuk memastikan frame tidak korup akibat interferensi motor kompresor.</li>
+                </ul>
               </div>
 
             </div>
