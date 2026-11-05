@@ -62,6 +62,18 @@
 #define RPM_SIMULATOR_MODE    1                        // 0=OFF, 1=LOW, 2=MED, 3=HIGH, 4=ACCEL, 5=DECEL, 6=UNSTABLE, 7=LOST
 
 // ----------------------------------------------------------------------------
+// 3.1 PENYADAP KABEL DATA SINYAL TERMINAL 3 (OPTOCOUPLER 220V TERISOLASI)
+// ----------------------------------------------------------------------------
+// Sisi AC Optocoupler: Input 1 ke Terminal 3 (Sinyal S), Input 2 ke Terminal 2 (Netral N)
+// Sisi DC Optocoupler: VCC ke 3.3V ESP32, GND ke GND, OUT ke GPIO16 (RX2)
+#define ENABLE_TERMINAL3_SNIFFER true                  // Aktifkan penyadapan kabel sinyal Terminal 3
+#define PIN_SIGNAL_RX         16                       // GPIO16 (Hardware Serial2 RX ESP32)
+#define PIN_SIGNAL_TX         -1                       // Mode penyadap pasif (-1, TX tidak digunakan)
+#define SIGNAL_BAUDRATE       2400                     // Baudrate standar Sharp J-Tech / Universal (2400 bps)
+#define SIGNAL_UART_CONFIG    SERIAL_8E1               // 8 data bits, Even parity, 1 stop bit (Sharp standard)
+#define SIGNAL_INVERT         true                     // True = membalik logika transistor optocoupler otomatis
+
+// ----------------------------------------------------------------------------
 // 4. PARAMETER PENGUKURAN TEGANGAN AC (RMS)
 // ----------------------------------------------------------------------------
 #define AC_FREQUENCY_HZ       50                       // Frekuensi listrik PLN Indonesia: 50 Hz (1 siklus = 20 ms)

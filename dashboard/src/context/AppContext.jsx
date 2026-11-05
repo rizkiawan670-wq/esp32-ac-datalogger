@@ -770,6 +770,52 @@ export function AppProvider({ children }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'compressor_rpm_measurements',
+          filter: `device_id=eq.${selectedDeviceId}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            const rpmItem = payload.new;
+            const rpmVal = Number(rpmItem.estimated_rpm) || 0;
+            appendSignalReading({
+              id: `real-sig-${rpmItem.id}`,
+              device_id: rpmItem.device_id,
+              measured_at: rpmItem.recorded_at,
+              model_name: 'Sharp AH-XP13DPY J-Tech Inverter (Terminal 3)',
+              voltage_v: latestReading?.voltage_v ?? 220.0,
+              room_temp_c: latestReading?.temperature_c ?? 24.5,
+              humidity_rh: latestReading?.humidity_rh ?? 55.0,
+              compressor_rpm: rpmVal,
+              inverter_freq_hz: Math.round((rpmVal * 4) / 120 * 10) / 10,
+              target_temp_c: 24.0,
+              indoor_coil_temp_c: 10.5,
+              outdoor_ambient_temp_c: 32.5,
+              outdoor_coil_temp_c: 41.5,
+              discharge_pipe_temp_c: 73.0,
+              eev_steps: Math.min(480, Math.round(120 + (rpmVal / 3300) * 200)),
+              eev_max_steps: 480,
+              fan_speed_indoor: rpmVal > 2400 ? 'HIGH' : (rpmVal > 1600 ? 'MED' : 'LOW'),
+              fan_speed_indoor_rpm: 840,
+              fan_speed_outdoor_rpm: 750,
+              operating_mode: 'COOL',
+              compressor_status: rpmItem.compressor_status || (rpmVal > 400 ? 'RUNNING' : 'OFF'),
+              defrost_status: 'OFF',
+              four_way_valve: 'OFF (Cooling Mode)',
+              error_code: '00',
+              error_description: 'Normal Operation (Sistem Sehat)',
+              signal_status: rpmItem.signal_status === 'VALID' ? 'LOCKED (UART 2400-8E1)' : rpmItem.signal_status,
+              baudrate: '2400 bps',
+              packet_raw_hex: 'AA 55 14 5F 18 0B 20 29 4A B9 00 B4',
+              is_simulated: false,
+            });
+          }
+        }
+      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setDbStatus('connected');

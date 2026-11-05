@@ -585,6 +585,60 @@ void drainOfflineQueue() {
 }
 
 // ----------------------------------------------------------------------------
+// TERMINAL 3 SIGNAL BUS SNIFFER (OPTOCOUPLER 220V PADA GPIO16 / SERIAL2)
+// Menyadap data serial UART dari kabel komunikasi Indoor-Outdoor (Terminal 3)
+// ----------------------------------------------------------------------------
+#if ENABLE_TERMINAL3_SNIFFER
+static uint8_t signalPacketBuf[64];
+static uint8_t signalBufIdx = 0;
+static unsigned long lastSignalByteMillis = 0;
+static String lastSignalHex = "";
+static float decodedSignalRpm = 0.0f;
+static bool hasValidSignalFrame = false;
+
+void initTerminal3Sniffer() {
+  Serial2.begin(SIGNAL_BAUDRATE, SIGNAL_UART_CONFIG, PIN_SIGNAL_RX, PIN_SIGNAL_TX, SIGNAL_INVERT);
+  Serial.printf("[SIGNAL SNIFFER] Penyadapan Terminal 3 aktif pada GPIO%d (Baud: %d, 8E1, Invert: %s)\n",
+    PIN_SIGNAL_RX, SIGNAL_BAUDRATE, SIGNAL_INVERT ? "TRUE" : "FALSE");
+}
+
+void processTerminal3Signal() {
+  while (Serial2.available()) {
+    uint8_t b = Serial2.read();
+    lastSignalByteMillis = millis();
+    if (signalBufIdx < sizeof(signalPacketBuf)) {
+      signalPacketBuf[signalBufIdx++] = b;
+    }
+  }
+
+  // Jika paket selesai diterima (jeda > 15ms setelah byte terakhir pada 2400 baud)
+  if (signalBufIdx > 0 && (millis() - lastSignalByteMillis > 15)) {
+    lastSignalHex = "";
+    for (int i = 0; i < signalBufIdx; i++) {
+      if (signalPacketBuf[i] < 0x10) lastSignalHex += "0";
+      lastSignalHex += String(signalPacketBuf[i], HEX);
+      lastSignalHex += " ";
+    }
+    lastSignalHex.toUpperCase();
+    lastSignalHex.trim();
+
+    Serial.printf("[TERMINAL 3 SNIFFER] %d Bytes: %s\n", signalBufIdx, lastSignalHex.c_str());
+
+    // Decode frekuensi / RPM kompresor inverter jika terdeteksi (Sharp J-Tech / Universal Frame)
+    if (signalBufIdx >= 5) {
+      uint8_t freqByte = signalPacketBuf[3];
+      if (freqByte >= 15 && freqByte <= 140) {
+        decodedSignalRpm = (float)freqByte * 30.0f; // Estimasi RPM = Frekuensi Hz * 30 (Motor 4-pole)
+        hasValidSignalFrame = true;
+      }
+    }
+
+    signalBufIdx = 0; // Bersihkan buffer untuk paket berikutnya
+  }
+}
+#endif
+
+// ----------------------------------------------------------------------------
 // ARDUINO SETUP & LOOP
 // ----------------------------------------------------------------------------
 void setup() {
@@ -627,6 +681,11 @@ void setup() {
     Serial.printf("[RPM SIMULATOR] Simulator RPM Aktif (Mode %d). Data ditandai SIMULATOR.\n", RPM_SIMULATOR_MODE);
   }
 
+  // Inisialisasi Terminal 3 Signal Bus Sniffer (Hardware Serial2 Optocoupler 220V)
+  #if ENABLE_TERMINAL3_SNIFFER
+  initTerminal3Sniffer();
+  #endif
+
   // Koneksi jaringan Wi-Fi cerdas (dengan memori Flash & Fallback Web Portal)
   isOnline = setupSmartWiFi();
 
@@ -640,6 +699,11 @@ void loop() {
 
   // 1. Cek kesehatan koneksi Wi-Fi secara berkala
   checkWiFiReconnect();
+
+  // 1.1 Penyadapan paket data serial Terminal 3 kabel sinyal AC secara non-blocking
+  #if ENABLE_TERMINAL3_SNIFFER
+  processTerminal3Signal();
+  #endif
 
   // 2. Siklus eksekusi setiap TELEMETRY_INTERVAL_MS (1 detik)
   unsigned long currentMillis = millis();
@@ -663,6 +727,15 @@ void loop() {
     interrupts();
 
     CompressorRpmData rpmData = rpmProcessor.update(snapPulseCount, snapLastMicros, snapIntervalMicros);
+
+    #if ENABLE_TERMINAL3_SNIFFER
+    // Jika kabel sinyal Terminal 3 aktif dan terdeteksi RPM dari bus digital
+    if (hasValidSignalFrame && decodedSignalRpm > 0) {
+      rpmData.estimated_rpm = decodedSignalRpm;
+      rpmData.status = decodedSignalRpm > 400 ? COMP_STATUS_MEDIUM : COMP_STATUS_OFF;
+      rpmData.signal_status = SIG_VALID;
+    }
+    #endif
 
     // D. Cetak diagnostik ke Serial Monitor (termasuk status Free Heap & Wi-Fi)
     Serial.printf("[%lu ms] V: %5.1f VAC | T: %5.1f C | RH: %5.1f %% | RPM: %4.0f (%s, %s, %s) | Heap: %lu KB | WiFi: %s\n",
