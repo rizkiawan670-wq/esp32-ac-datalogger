@@ -1,7 +1,7 @@
 // ============================================================================
-// ANALYSIS PAGE (ANALISIS KONDISI AC & JALA LISTRIK)
-// Modul evaluasi komprehensif profil tegangan, beban termal, dan deteksi anomali
-// Dilengkapi disclaimer keselamatan teknis pendingin udara.
+// ANALYSIS PAGE (ANALISIS KONDISI AC, JALA LISTRIK & INVERTER COMPRESSOR)
+// Modul evaluasi komprehensif profil kompresor, tegangan listrik, beban termal,
+// dan deteksi anomali. Dilengkapi disclaimer keselamatan teknis pendingin udara.
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -21,6 +21,9 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateStatistics, calculateDewPoint } from '../utils/analytics';
+import CompressorRpmSummary from '../components/CompressorRpmSummary';
+import CompressorSpeedAnalysis from '../components/CompressorSpeedAnalysis';
+import CompressorBehaviorAnalysis from '../components/CompressorBehaviorAnalysis';
 
 export default function AnalysisPage() {
   const { realtimeBuffer, settings, selectedDeviceId } = useApp();
@@ -67,7 +70,22 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      {/* 2. HEADER ANALISIS & PEMILIH SAMPEL */}
+      {/* 2. PROFIL & KONTROL DETAIL KOMPRESOR INVERTER */}
+      <section aria-label="Ringkasan RPM & Profil Compressor">
+        <CompressorRpmSummary />
+      </section>
+
+      {/* 3. DISTRIBUSI KECEPATAN COMPRESSOR (LOW / MEDIUM / HIGH) */}
+      <section aria-label="Distribusi Kecepatan Compressor">
+        <CompressorSpeedAnalysis />
+      </section>
+
+      {/* 4. ANALISIS PERILAKU COMPRESSOR (KESIMPULAN NARATIF OTOMATIS) */}
+      <section aria-label="Analisis Perilaku Compressor">
+        <CompressorBehaviorAnalysis />
+      </section>
+
+      {/* 5. HEADER ANALISIS KELISTRIKAN & PEMILIH SAMPEL */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-white flex items-center">
@@ -94,7 +112,7 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      {/* 3. GRID INDIKATOR KELENGKAPAN ANALISIS */}
+      {/* 6. GRID INDIKATOR KELENGKAPAN ANALISIS KELISTRIKAN & TERMAL */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         
         {/* KELOMPOK 1: KESEHATAN TEGANGAN LISTRIK JALA-JALA PLN */}
@@ -239,7 +257,7 @@ export default function AnalysisPage() {
 
       </div>
 
-      {/* 4. RIWAYAT PERISTIWA FLUKTUASI TAJAM */}
+      {/* 7. RIWAYAT PERISTIWA FLUKTUASI TAJAM */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200 mb-3 flex items-center">
           <AlertTriangle className="w-4 h-4 mr-2 text-electric-orange" />

@@ -59,14 +59,13 @@ Sesuai instruksi revisi:
 ---
 
 ## 3. SUSUNAN LAYOUT DASHBOARD UTAMA
-Struktur halaman [`DashboardPage.jsx`](file:///d:/datalogger/dashboard/src/pages/DashboardPage.jsx):
-1. **Ringkasan Kondisi AC** ([`StatusCards.jsx`](file:///d:/datalogger/dashboard/src/components/StatusCards.jsx)): Tegangan AC RMS, Suhu, Kelembapan, dan Titik Embun.
-2. **Ringkasan RPM Compressor** ([`CompressorRpmSummary.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorRpmSummary.jsx)): Estimated RPM, Status, Kategori Speed, Trend, Status Sensor, Kalibrasi.
-3. **GRAFIK MONITORING UTAMA TERPADU** ([`RealtimeCharts.jsx`](file:///d:/datalogger/dashboard/src/components/RealtimeCharts.jsx)): Grafik multi-axis gabungan Tegangan RMS, RPM, Suhu, dan Kelembapan.
-4. **Distribusi Kecepatan LOW/MEDIUM/HIGH** ([`CompressorSpeedAnalysis.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorSpeedAnalysis.jsx)): Durasi, persentase waktu, Min/Max/Avg RPM berbasis batas kalibrasi.
-5. **Analisis Perilaku Compressor** ([`CompressorBehaviorAnalysis.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorBehaviorAnalysis.jsx)): Indikator status dinamika dan narasi otomatis.
-6. **Riwayat Pengukuran Telemetri & Log RPM** ([`CompressorHistoryLog.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorHistoryLog.jsx)): Tabel rekaman telemetri terpadu dengan tombol ekspor CSV.
-7. **Statistik Sesi Berjalan Listrik AC & Fluktuasi Terdeteksi**: Ringkasan dip/sag dan lonjakan tegangan PLN.
+Struktur halaman [`DashboardPage.jsx`](file:///d:/datalogger/dashboard/src/pages/DashboardPage.jsx) (Ringkas, Bersih & Fokus):
+1. **Indikator Sensor** ([`StatusCards.jsx`](file:///d:/datalogger/dashboard/src/components/StatusCards.jsx)): Tegangan AC RMS, Suhu, Kelembapan, dan Estimated RPM.
+2. **GRAFIK MONITORING UTAMA TERPADU** ([`RealtimeCharts.jsx`](file:///d:/datalogger/dashboard/src/components/RealtimeCharts.jsx)): Grafik multi-axis gabungan Tegangan RMS, RPM, Suhu, dan Kelembapan.
+
+Komponen lainnya telah dipindahkan sesuai fungsinya:
+- **Riwayat Pengukuran Telemetri & Log RPM** ([`CompressorHistoryLog.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorHistoryLog.jsx)) dipindahkan ke halaman **Riwayat** ([`HistoryPage.jsx`](file:///d:/datalogger/dashboard/src/pages/HistoryPage.jsx)).
+- **Ringkasan RPM Compressor** ([`CompressorRpmSummary.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorRpmSummary.jsx)), **Distribusi Kecepatan** ([`CompressorSpeedAnalysis.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorSpeedAnalysis.jsx)), dan **Analisis Perilaku Compressor** ([`CompressorBehaviorAnalysis.jsx`](file:///d:/datalogger/dashboard/src/components/CompressorBehaviorAnalysis.jsx)) dipindahkan ke halaman **Analisis** ([`AnalysisPage.jsx`](file:///d:/datalogger/dashboard/src/pages/AnalysisPage.jsx)).
 
 ---
 

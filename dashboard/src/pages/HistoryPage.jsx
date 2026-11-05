@@ -19,6 +19,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { getSupabaseClient } from '../services/supabase';
 import { exportReadingsToCSV, exportRpmToCSV, exportCombinedTelemetryToCSV } from '../utils/csvExport';
+import CompressorHistoryLog from '../components/CompressorHistoryLog';
 
 export default function HistoryPage() {
   const {
@@ -269,19 +270,24 @@ export default function HistoryPage() {
   // RENDER
   // --------------------------------------------------------------------------
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
 
-      {/* ── Header & Filter Bar ────────────────────────────────────────── */}
+      {/* ── 1. RIWAYAT PENGUKURAN TELEMETRI & LOG RPM ─────────────────── */}
+      <section aria-label="Riwayat Pengukuran Telemetri & Log RPM">
+        <CompressorHistoryLog />
+      </section>
+
+      {/* ── 2. ARSIP & PENELUSURAN BASIS DATA HISTORIS ─────────────────── */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 shadow-lg">
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
           <div>
             <h2 className="text-base font-bold text-white flex items-center">
               <Calendar className="w-5 h-5 mr-2 text-electric-orange" />
-              Riwayat Pengukuran &amp; Log Data Telemetri
+              Arsip &amp; Penelusuran Basis Data Historis
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Telusuri riwayat kecepatan kompresor, kondisi tegangan PLN, dan suhu AC.
+              Telusuri riwayat kecepatan kompresor, kondisi tegangan PLN, dan suhu AC dengan query multi-mode dan paginasi.
             </p>
           </div>
 
