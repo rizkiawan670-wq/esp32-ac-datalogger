@@ -82,6 +82,8 @@ Komponen lainnya telah dipindahkan sesuai fungsinya:
 | 7 | `firmware/ac_datalogger/config.h` & `firmware/config.h` | Dimodifikasi | Menambahkan parameter `#define VOLTAGE_TRIM_OFFSET_V 5.0f` untuk kompensasi selisih 5V lebih rendah terhadap Multimeter True-RMS. |
 | 8 | `firmware/ac_datalogger/ac_datalogger.ino` & `firmware/ac_datalogger.ino` | Dimodifikasi | Menerapkan `VOLTAGE_TRIM_OFFSET_V` pada hasil perhitungan True-RMS sebelum transmisi telemetri. |
 | 9 | `dashboard/src/context/AppContext.jsx` & `SettingsPage.jsx` | Dimodifikasi | Menambahkan opsi `voltageTrimOffset` pada pengaturan web untuk kalibrasi instan tanpa perlu re-flash via USB. |
+| 10 | `dashboard/src/services/gemini.js` & `AiDiagnosticsPage.jsx` | Dimodifikasi | Menghapus seluruh jawaban lokal/hardcoded dan beralih 100% Full AI Online bertenaga Google Gemini API murni. |
+
 
 ---
 

@@ -1,6 +1,7 @@
 // ============================================================================
 // AI DIAGNOSTICS & SYSTEM CONSULTATION PAGE
-// Halaman asisten AI cerdas untuk konsultasi alur proses, analisis telemetri,
+// Halaman asisten AI cerdas FULL ONLINE bertenaga Google Gemini.
+// 100% cloud reasoning untuk konsultasi alur proses, analisis telemetri,
 // dan pemecahan masalah (troubleshooting) AC Datalogger IoT ESP32.
 // ============================================================================
 
@@ -46,27 +47,6 @@ export default function AiDiagnosticsPage() {
     settings,
   } = useApp();
 
-  // State percakapan
-  const [messages, setMessages] = useState(() => {
-    return [
-      {
-        id: 'welcome',
-        role: 'assistant',
-        text: `### 🤖 Halo! Saya Asisten AI AC Datalogger.
-Saya siap membantu Anda memahami alur kerja sistem, menganalisis telemetri tegangan True-RMS, putaran kompresor (RPM), dan melakukan diagnosa teknis.
-
-Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada kolom chat:`,
-        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        source: 'local'
-      }
-    ];
-  });
-
-  const [inputPrompt, setInputPrompt] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [includeTelemetry, setIncludeTelemetry] = useState(true);
-  const [copiedId, setCopiedId] = useState(null);
-
   // State Modal Konfigurasi API Key
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -74,8 +54,6 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
   const [keySaveStatus, setKeySaveStatus] = useState(null);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [keyTestFeedback, setKeyTestFeedback] = useState(null);
-
-  const chatEndRef = useRef(null);
 
   // Inisialisasi API Key dari storage
   useEffect(() => {
@@ -86,22 +64,52 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     }
   }, []);
 
+  // State percakapan
+  const [messages, setMessages] = useState(() => {
+    return [
+      {
+        id: 'welcome',
+        role: 'assistant',
+        text: `### 🤖 Halo! Saya Asisten AI Online AC Datalogger.
+Saya beroperasi secara **100% Full AI Online bertenaga Google Gemini API** untuk membantu Anda menganalisis telemetri tegangan True-RMS, putaran kompresor (RPM), kondisi termal ruangan, serta menjawab pertanyaan teknis alur proses sistem secara mendalam.
+
+Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
+        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        source: 'gemini',
+        model: 'Google Gemini Online Co-Pilot'
+      }
+    ];
+  });
+
+  const [inputPrompt, setInputPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [includeTelemetry, setIncludeTelemetry] = useState(true);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const chatEndRef = useRef(null);
+
   // Auto-scroll ke pesan terbaru
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
 
-  // Snapshot telemetri terkini
+  // Snapshot telemetri terkini (akurat mengambil voltage_v & rpm)
+  const currentRpm = latestRpmReading ? Number(latestRpmReading.estimated_rpm ?? latestRpmReading.rpm ?? 0) : 0;
+  const currentVoltage = latestReading ? Number(latestReading.voltage_v ?? latestReading.voltage_rms ?? 0) : 0;
+  const currentTemp = latestReading ? Number(latestReading.temperature_c ?? 0) : 0;
+  const currentHumidity = latestReading ? Number(latestReading.humidity_rh ?? 0) : 0;
+  const isRunning = currentRpm >= 400 && latestRpmReading?.compressor_status !== 'OFF';
+
   const telemetryContext = {
     deviceId: selectedDeviceId,
     isOnline: isDeviceOnline,
-    voltage: latestReading ? Number(latestReading.voltage_rms) : 0,
-    temperature: latestReading ? Number(latestReading.temperature_c) : 0,
-    humidity: latestReading ? Number(latestReading.humidity_rh) : 0,
-    rpm: latestRpmReading ? Number(latestRpmReading.estimated_rpm) : 0,
-    isRunning: latestRpmReading ? Boolean(latestRpmReading.is_running) : false,
-    speedCategory: latestRpmReading?.speed_category || 'OFF',
-    profileName: activeCompressorProfile ? `${activeCompressorProfile.brand} ${activeCompressorProfile.model}` : 'Universal Inverter',
+    voltage: currentVoltage,
+    temperature: currentTemp,
+    humidity: currentHumidity,
+    rpm: currentRpm,
+    isRunning: isRunning,
+    speedCategory: latestRpmReading?.speed_category || (currentRpm < 400 ? 'OFF' : 'LOW'),
+    profileName: activeCompressorProfile ? `${activeCompressorProfile.brand} (${activeCompressorProfile.motor_poles} Pole)` : 'Universal Inverter',
     settings: settings
   };
 
@@ -110,7 +118,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     const cleanKey = apiKeyInput.trim().replace(/^["']|["']$/g, '');
     saveStoredGeminiKey(cleanKey);
     setHasApiKey(Boolean(cleanKey));
-    setKeySaveStatus('Kunci Berhasil Disimpan!');
+    setKeySaveStatus('Kunci Berhasil Disimpan & Aktif!');
     setTimeout(() => {
       setKeySaveStatus(null);
       setShowKeyModal(false);
@@ -130,12 +138,11 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
       const res = await testGeminiApiKey(cleanKey);
       setKeyTestFeedback({ 
         success: true, 
-        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model} ${res.version || ''}). Kunci telah otomatis disimpan dan aktif!` 
+        message: `✅ Kunci Valid! Terhubung ke Google Gemini (${res.model} ${res.version || ''}). Kunci telah otomatis disimpan dan aktif online!` 
       });
-      // Otomatis simpan kunci saat uji validitas sukses
       saveStoredGeminiKey(cleanKey);
       setHasApiKey(true);
-      setKeySaveStatus('Kunci Valid & Aktif!');
+      setKeySaveStatus('Kunci Valid & Aktif Online!');
     } catch (err) {
       setKeyTestFeedback({ 
         success: false, 
@@ -159,16 +166,44 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     }, 1200);
   };
 
-  // Kirim Pertanyaan
+  // Kirim Pertanyaan (Full AI Online)
   const handleSendMessage = async (textToSend = null) => {
     const query = (textToSend || inputPrompt).trim();
     if (!query || isGenerating) return;
+
+    const activeKey = (apiKeyInput || getStoredGeminiKey() || '').trim();
+
+    // Validasi kunci secara tegas: JANGAN PERNAH respon dengan template lokal jika kunci belum ada
+    if (!activeKey) {
+      const userMessageId = `user_${Date.now()}`;
+      const userTimestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: userMessageId,
+          role: 'user',
+          text: query,
+          timestamp: userTimestamp
+        },
+        {
+          id: `missing_key_${Date.now()}`,
+          role: 'assistant',
+          text: `⚠️ **Google Gemini API Key Belum Dikonfigurasi**\n\nSistem AI Diagnosa beroperasi **100% Full AI Online** menggunakan Google Gemini AI tanpa jawaban lokal/hardcoded.\n\nSilakan masukkan **Google Gemini API Key** Anda untuk mengaktifkan kecerdasan generatif online. Anda bisa mendapatkan API Key gratis di [Google AI Studio](https://aistudio.google.com/app/apikey).`,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          source: 'warning',
+          model: 'Google Gemini (Perlu API Key)'
+        }
+      ]);
+      setInputPrompt('');
+      setShowKeyModal(true);
+      return;
+    }
 
     const userMessageId = `user_${Date.now()}`;
     const userTimestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     // Salin history sebelum pesan baru ditambahkan (agar turn tetap alternate user -> model)
-    const historyBeforeNewPrompt = messages.filter(m => m.id !== 'welcome');
+    const historyBeforeNewPrompt = messages.filter(m => m.id !== 'welcome' && m.source !== 'warning');
 
     const newMessages = [
       ...messages,
@@ -189,7 +224,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
         prompt: query,
         history: historyBeforeNewPrompt,
         telemetryContext: includeTelemetry ? telemetryContext : null,
-        apiKey: (apiKeyInput || getStoredGeminiKey() || '').trim(),
+        apiKey: activeKey,
       });
 
       const assistantMessageId = `assistant_${Date.now()}`;
@@ -212,9 +247,10 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
         {
           id: `error_${Date.now()}`,
           role: 'assistant',
-          text: `❌ Terjadi kesalahan saat memproses jawaban: ${err.message}`,
+          text: `❌ **Gagal Terhubung ke Google Gemini Online:**\n\n\`${err.message}\`\n\n> Pastikan perangkat Anda terhubung ke internet dan API Key memiliki izin akses aktif di Google AI Studio. Klik tombol **Pengaturan API Key** di atas untuk menguji atau memperbarui kunci.`,
           timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-          source: 'error'
+          source: 'error',
+          model: 'Google Gemini Error'
         }
       ]);
     } finally {
@@ -227,32 +263,32 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
     {
       icon: Zap,
       label: 'Analisis Kondisi Saat Ini',
-      query: 'Bagaimana analisis kondisi telemetri sistem saat ini berdasarkan tegangan, suhu, dan RPM kompresor?'
+      query: 'Bagaimana analisis kondisi telemetri sistem saat ini berdasarkan tegangan True-RMS, suhu, dan RPM kompresor aktual?'
     },
     {
       icon: Activity,
       label: 'Alur Proses Aplikasi',
-      query: 'Jelaskan alur dan proses kerja sistem AC datalogger ini dari ESP32 hingga tampil di dashboard web.'
+      query: 'Jelaskan alur dan proses kerja sistem AC datalogger ini dari mikrokontroler ESP32 hingga tampil di dashboard web.'
     },
     {
       icon: Gauge,
       label: 'Cara Kerja Estimasi RPM',
-      query: 'Bagaimana cara sistem menghitung dan memperkirakan RPM motor kompresor inverter?'
+      query: 'Bagaimana cara sistem menghitung dan memperkirakan RPM motor kompresor inverter dari frekuensi sinyal driver?'
     },
     {
       icon: Layers,
       label: 'Perhitungan True-RMS',
-      query: 'Bagaimana ESP32 menghitung tegangan True-RMS dari sensor ZMPT101B?'
+      query: 'Bagaimana algoritma ESP32 menghitung tegangan True-RMS dari modul sensor ZMPT101B?'
     },
     {
       icon: Thermometer,
       label: 'Mengapa SHT31 Error -99.9?',
-      query: 'Kenapa sensor SHT31 sempat membaca nilai -99.9°C saat kompresor menyala dan bagaimana solusinya?'
+      query: 'Kenapa sensor SHT31 sempat membaca nilai -99.9°C saat kompresor menyala dan bagaimana solusinya di firmware?'
     },
     {
       icon: HelpCircle,
       label: 'Panduan Kalibrasi Sensor',
-      query: 'Bagaimana langkah-langkah kalibrasi sensor ZMPT101B dan pengaturan profil kompresor?'
+      query: 'Bagaimana langkah-langkah kalibrasi sensor ZMPT101B dan konfigurasi rasio kutub motor kompresor?'
     }
   ];
 
@@ -358,11 +394,11 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                 </h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40 flex items-center space-x-1">
                   <Sparkles className="w-3 h-3 text-purple-400 mr-1" />
-                  <span>GEMINI CO-PILOT</span>
+                  <span>FULL AI ONLINE</span>
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                Asisten cerdas untuk konsultasi alur proses ESP32, diagnosa data telemetri AC True-RMS, estimasi frekuensi kompresor, dan panduan troubleshooting.
+                100% bertenaga model resmi <strong>Google Gemini API</strong>. Analisis telemetri AC True-RMS, dinamika kompresor inverter, dan panduan teknis cerdas secara online.
               </p>
             </div>
           </div>
@@ -381,18 +417,21 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
               className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-mono font-medium transition-all cursor-pointer ${
                 hasApiKey
                   ? 'bg-emerald-950/60 border-emerald-500/70 text-emerald-300 hover:bg-emerald-900/50 shadow-sm shadow-emerald-950'
-                  : 'bg-industrial-950 border-industrial-700 text-slate-300 hover:border-electric-orange/60'
+                  : 'bg-amber-950/60 border-amber-500/70 text-amber-300 hover:bg-amber-900/50 animate-pulse'
               }`}
               title="Atur Google Gemini API Key"
             >
-              <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-electric-orange'}`} />
+              <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-amber-400'}`} />
               {hasApiKey ? (
                 <span className="flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Gemini Online Aktif</span>
+                  <span className="font-bold">Gemini Online Aktif</span>
                 </span>
               ) : (
-                <span>Engine Offline (Klik untuk Aktifkan Online)</span>
+                <span className="flex items-center space-x-1.5">
+                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                  <span className="font-bold">Kunci AI Belum Diatur</span>
+                </span>
               )}
             </button>
 
@@ -409,12 +448,41 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
         </div>
       </div>
 
-      {/* 2. REALTIME TELEMETRY CONTEXT BAR */}
+      {/* 2. ALERT BANNER JIKA BELUM ADA API KEY */}
+      {!hasApiKey && (
+        <div className="bg-gradient-to-r from-amber-950/50 to-industrial-900 border border-amber-600/60 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-amber-300 font-mono block">
+                MODE FULL AI ONLINE MEMERLUKAN GOOGLE GEMINI API KEY
+              </span>
+              <p className="text-slate-300 mt-0.5">
+                Sistem beroperasi 100% online dengan Google Gemini tanpa jawaban lokal/hardcoded. Masukkan API Key gratis dari Google AI Studio untuk mengaktifkan AI.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const stored = getStoredGeminiKey();
+              if (stored) setApiKeyInput(stored);
+              setKeyTestFeedback(null);
+              setShowKeyModal(true);
+            }}
+            className="px-3.5 py-1.5 rounded-lg bg-electric-orange hover:bg-orange-600 text-white font-mono font-bold whitespace-nowrap cursor-pointer shadow flex items-center space-x-1.5"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span>Masukkan API Key</span>
+          </button>
+        </div>
+      )}
+
+      {/* 3. REALTIME TELEMETRY CONTEXT BAR */}
       <div className="bg-industrial-900/90 border border-industrial-800 rounded-xl p-3 sm:p-4 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2.5 border-b border-industrial-800/80">
           <div className="flex items-center space-x-2 text-xs font-mono text-slate-300">
             <Activity className="w-4 h-4 text-electric-orange animate-pulse" />
-            <span className="font-semibold text-white">SNAPSHOT TELEMETRI YANG DIBACA AI:</span>
+            <span className="font-semibold text-white">SNAPSHOT TELEMETRI YANG DIBACA AI SECARA ONLINE:</span>
             <span className="text-slate-400 font-mono">({selectedDeviceId})</span>
           </div>
 
@@ -479,7 +547,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
         </div>
       </div>
 
-      {/* 3. QUICK PROMPT CHIPS */}
+      {/* 4. QUICK PROMPT CHIPS */}
       <div className="space-y-1.5">
         <span className="text-xs font-mono text-slate-400 px-1">Topik Cepat yang Sering Ditanyakan:</span>
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs font-mono">
@@ -500,7 +568,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
         </div>
       </div>
 
-      {/* 4. CHAT CONVERSATION CONTAINER */}
+      {/* 5. CHAT CONVERSATION CONTAINER */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl flex flex-col h-[520px] sm:h-[600px] shadow-xl overflow-hidden">
         
         {/* Messages Scroll Area */}
@@ -517,6 +585,8 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                   className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white font-bold text-xs ${
                     isUser
                       ? 'bg-gradient-to-br from-blue-600 to-indigo-700 shadow-sm'
+                      : msg.source === 'error'
+                      ? 'bg-rose-900 shadow-sm'
                       : 'bg-gradient-to-br from-electric-orange to-purple-600 shadow-sm'
                   }`}
                 >
@@ -527,6 +597,8 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                 <div className={`max-w-[88%] sm:max-w-[80%] rounded-2xl px-4 py-3 shadow-md text-xs sm:text-sm ${
                   isUser
                     ? 'bg-blue-600/30 border border-blue-500/40 text-blue-50 rounded-tr-none'
+                    : msg.source === 'error'
+                    ? 'bg-rose-950/40 border border-rose-800/60 text-rose-200 rounded-tl-none'
                     : 'bg-industrial-950 border border-industrial-800 text-slate-200 rounded-tl-none'
                 }`}>
                   
@@ -536,15 +608,15 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                       <span className={`flex items-center space-x-1 ${
                         msg.source === 'gemini' 
                           ? 'text-emerald-400 font-bold' 
-                          : msg.source === 'fallback' 
-                          ? 'text-amber-400 font-semibold' 
-                          : 'text-purple-300'
+                          : msg.source === 'error' 
+                          ? 'text-rose-400 font-semibold' 
+                          : 'text-amber-400 font-semibold'
                       }`}>
-                        <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' ? 'text-emerald-400' : 'text-purple-400'}`} />
+                        <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' ? 'text-emerald-400' : 'text-amber-400'}`} />
                         <span>{msg.model}</span>
                         {msg.source === 'gemini' && (
-                          <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/50">
-                            ONLINE
+                          <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/50 font-bold">
+                            FULL AI ONLINE
                           </span>
                         )}
                       </span>
@@ -591,7 +663,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
               </div>
               <div className="bg-industrial-950 border border-industrial-800 rounded-2xl rounded-tl-none px-4 py-3 text-xs sm:text-sm text-slate-300 flex items-center space-x-2">
                 <RotateCw className="w-4 h-4 animate-spin text-electric-orange" />
-                <span>AI sedang menganalisis telemetri dan menyusun jawaban teknis...</span>
+                <span>Menghubungi Google Gemini AI Online & menganalisis telemetri...</span>
               </div>
             </div>
           )}
@@ -612,7 +684,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
               type="text"
               value={inputPrompt}
               onChange={(e) => setInputPrompt(e.target.value)}
-              placeholder="Tanyakan alur proses aplikasi, True-RMS, RPM kompresor, atau analisa data..."
+              placeholder="Tanyakan apa saja ke Google Gemini AI (Full Online)..."
               disabled={isGenerating}
               className="flex-1 bg-industrial-900 border border-industrial-800 focus:border-electric-orange focus:ring-1 focus:ring-electric-orange rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 outline-none transition-all font-sans"
             />
@@ -627,13 +699,13 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
           </form>
           <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-2 px-1">
             <span>Tekan Enter untuk mengirim pertanyaan.</span>
-            <span>Didukung Model Google Gemini & Diagnostic Reasoner.</span>
+            <span>100% Full AI Online didukung Google Gemini Cloud API.</span>
           </div>
         </div>
 
       </div>
 
-      {/* 5. MODAL KONFIGURASI GEMINI API KEY */}
+      {/* 6. MODAL KONFIGURASI GEMINI API KEY */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
           <div className="bg-industrial-900 border border-industrial-700 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl relative">
@@ -657,7 +729,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
             {/* Modal Body */}
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed font-sans">
               <p>
-                Dengan memasukkan <strong>Google Gemini API Key</strong>, asisten AI akan menggunakan model <strong>Google Gemini (2.0 Flash / 1.5 Flash)</strong> dengan kecerdasan generatif online tanpa batas, kemampuan bernalar tingkat lanjut, dan analisis data mendalam.
+                Sistem AI Diagnosa beroperasi <strong>100% Full AI Online</strong> menggunakan model resmi <strong>Google Gemini</strong>. Tidak ada jawaban lokal atau offline yang digunakan.
               </p>
 
               <div className="p-3 bg-industrial-950 border border-industrial-800 rounded-lg space-y-1.5">
@@ -714,7 +786,7 @@ Silakan pilih topik di bawah ini atau ketik pertanyaan teknis Anda langsung pada
                   </button>
                 </div>
                 <span className="text-[10px] text-slate-500 block font-mono">
-                  🔒 Kunci disimpan secara aman di browser lokal Anda (localStorage) dan dikirim langsung ke server resmi Google API.
+                  🔒 Kunci disimpan di browser Anda (localStorage) dan dikirim langsung ke server resmi Google API.
                 </span>
               </div>
 
