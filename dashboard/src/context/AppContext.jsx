@@ -16,8 +16,11 @@ const DEFAULT_SETTINGS = {
   voltageTrimOffset: 0.0, // Koreksi offset kalibrasi manual (Volt): misal +5.0 jika ESP32 lebih rendah 5V
   tempLow: 16.0,
   tempHigh: 32.0,
+  tempTrimOffset: 0.0, // Koreksi offset kalibrasi suhu (°C)
   humidityLow: 30.0,
   humidityHigh: 75.0,
+  humidityTrimOffset: 0.0, // Koreksi offset kalibrasi kelembaban (%RH)
+  rpmMultiplier: 1.0,  // Faktor pengali kalibrasi RPM kompresor
   bufferLimit: 180,    // 180 titik = 3 menit telemetri per detik untuk grafik live
 };
 
@@ -169,6 +172,7 @@ export function AppProvider({ children }) {
 
   const realtimeChannelRef = useRef(null);
   const rpmChannelRef = useRef(null);
+  const syncChannelRef = useRef(null);
   const simulationTimerRef = useRef(null);
   const heartbeatTimerRef = useRef(null);
   const latestTimestampRef = useRef(Date.now());
@@ -217,11 +221,34 @@ export function AppProvider({ children }) {
   const appendReading = useCallback((reading) => {
     if (isStreamPaused) return;
 
-    // Terapkan koreksi offset voltase jika disetel teknisi di Pengaturan Dashboard
-    const offset = Number(settings.voltageTrimOffset) || 0;
-    const processedReading = (offset !== 0 && reading && reading.voltage_v != null && Number(reading.voltage_v) > 10)
-      ? { ...reading, voltage_v: Math.round((Number(reading.voltage_v) + offset) * 10) / 10 }
-      : reading;
+    // Terapkan koreksi kalibrasi offset jika disetel teknisi atau AI Agent
+    const vOffset = Number(settings.voltageTrimOffset) || 0;
+    const tOffset = Number(settings.tempTrimOffset) || 0;
+    const hOffset = Number(settings.humidityTrimOffset) || 0;
+
+    let processedReading = reading;
+    if (reading) {
+      let v = reading.voltage_v != null ? Number(reading.voltage_v) : (reading.voltage_rms != null ? Number(reading.voltage_rms) : null);
+      let t = reading.temperature_c != null ? Number(reading.temperature_c) : null;
+      let h = reading.humidity_rh != null ? Number(reading.humidity_rh) : null;
+
+      if (v != null && v > 10 && vOffset !== 0) {
+        v = Math.round((v + vOffset) * 10) / 10;
+      }
+      if (t != null && tOffset !== 0) {
+        t = Math.round((t + tOffset) * 10) / 10;
+      }
+      if (h != null && hOffset !== 0) {
+        h = Math.max(0, Math.min(100, Math.round((h + hOffset) * 10) / 10));
+      }
+
+      processedReading = {
+        ...reading,
+        ...(v != null ? { voltage_v: v } : {}),
+        ...(t != null ? { temperature_c: t } : {}),
+        ...(h != null ? { humidity_rh: h } : {}),
+      };
+    }
 
     setLatestReading(processedReading);
     latestTimestampRef.current = Date.now();
@@ -235,25 +262,39 @@ export function AppProvider({ children }) {
       }
       return updated;
     });
-  }, [isStreamPaused, settings.bufferLimit, settings.voltageTrimOffset]);
+  }, [isStreamPaused, settings.bufferLimit, settings.voltageTrimOffset, settings.tempTrimOffset, settings.humidityTrimOffset]);
 
   // Tambahkan pembacaan RPM kompresor baru ke buffer
   const appendRpmReading = useCallback((rpmReading) => {
     if (isStreamPaused) return;
 
-    setLatestRpmReading(rpmReading);
+    const rpmMult = Number(settings.rpmMultiplier) || 1.0;
+    let processedRpm = rpmReading;
+    if (rpmReading && rpmMult !== 1.0) {
+      const rawRpm = Number(rpmReading.estimated_rpm ?? rpmReading.rpm ?? 0);
+      if (rawRpm > 0) {
+        const adjustedRpm = Math.max(0, Math.round(rawRpm * rpmMult));
+        processedRpm = {
+          ...rpmReading,
+          estimated_rpm: adjustedRpm,
+          rpm: adjustedRpm,
+        };
+      }
+    }
+
+    setLatestRpmReading(processedRpm);
     latestTimestampRef.current = Date.now();
     setSecondsSinceLastPacket(0);
     setIsDeviceOnline(true);
 
     setRpmRealtimeBuffer((prev) => {
-      const updated = [...prev, rpmReading];
+      const updated = [...prev, processedRpm];
       if (updated.length > settings.bufferLimit) {
         return updated.slice(updated.length - settings.bufferLimit);
       }
       return updated;
     });
-  }, [isStreamPaused, settings.bufferLimit]);
+  }, [isStreamPaused, settings.bufferLimit, settings.rpmMultiplier]);
 
   // Reset buffer data grafik lokal (RAM)
   const resetChartBuffer = useCallback(() => {
@@ -460,6 +501,253 @@ export function AppProvider({ children }) {
   }, [isSimulating, selectedDeviceId, appendReading, appendRpmReading, rpmSimMode, activeCompressorProfile]);
 
   // --------------------------------------------------------------------------
+  // KALIBRASI CLOUD PERSISTENCE & REALTIME MULTI-DEVICE SYNCHRONIZATION
+  // --------------------------------------------------------------------------
+  // Simpan kalibrasi secara permanen ke Supabase Database & Broadcast ke semua device
+  const persistCalibrationToCloud = useCallback(async (calSettings, calProfile) => {
+    const client = getSupabaseClient();
+    let cloudSaved = false;
+
+    const currentSettings = calSettings || settings;
+    const currentProfile = calProfile || activeCompressorProfile;
+
+    const calData = {
+      calibration: {
+        voltageTrimOffset: Number(currentSettings.voltageTrimOffset) || 0,
+        tempTrimOffset: Number(currentSettings.tempTrimOffset) || 0,
+        humidityTrimOffset: Number(currentSettings.humidityTrimOffset) || 0,
+        rpmMultiplier: Number(currentSettings.rpmMultiplier) || 1.0,
+        motor_poles: Number(currentProfile?.motor_poles) || 4,
+        pulses_per_revolution: (Number(currentProfile?.motor_poles) || 4) / 2,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'AI Agent & Web Dashboard'
+      }
+    };
+
+    if (client) {
+      try {
+        // 1. Simpan permanen ke tabel compressor_profiles row 'universal'
+        const { error } = await client
+          .from('compressor_profiles')
+          .update({
+            notes: JSON.stringify(calData),
+            motor_poles: Number(currentProfile?.motor_poles) || 4,
+            pulses_per_revolution: (Number(currentProfile?.motor_poles) || 4) / 2,
+            is_calibrated: true,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', 'universal');
+
+        if (!error) {
+          cloudSaved = true;
+        }
+      } catch (e) {
+        console.warn('Gagal menyimpan kalibrasi ke Supabase:', e);
+      }
+
+      // 2. Broadcast ke semua tab/browser/perangkat yang sedang terhubung
+      try {
+        const channel = syncChannelRef.current || client.channel('system_calibration_sync');
+        await channel.send({
+          type: 'broadcast',
+          event: 'CALIBRATION_UPDATE',
+          payload: calData
+        });
+      } catch (e) {
+        console.warn('Gagal menyiarkan kalibrasi via realtime broadcast:', e);
+      }
+    }
+
+    return { cloudSaved, calData };
+  }, [settings, activeCompressorProfile]);
+
+  // Eksekusi kalibrasi otomatis oleh AI Agent
+  const applyAiCalibration = useCallback(async (actionType, args = {}) => {
+    let result = {
+      success: false,
+      action: actionType,
+      parameter: '',
+      unit: '',
+      oldValue: null,
+      newValue: null,
+      offset: null,
+      notes: args.explanation || '',
+      cloudSaved: false
+    };
+
+    let updatedSettings = { ...settings };
+    let updatedProfile = { ...activeCompressorProfile };
+
+    if (actionType === 'calibrate_voltage') {
+      const rawReading = latestReading?.voltage_v ?? 220;
+      const oldOffset = Number(settings.voltageTrimOffset) || 0;
+      const baseUncalibrated = rawReading - oldOffset;
+
+      let newOffset = 0;
+      if (args.offset_volts !== undefined && args.offset_volts !== null) {
+        newOffset = Math.round(Number(args.offset_volts) * 10) / 10;
+      } else if (args.target_volts !== undefined && args.target_volts !== null) {
+        newOffset = Math.round((Number(args.target_volts) - baseUncalibrated) * 10) / 10;
+      }
+
+      const calculatedNew = Math.round((baseUncalibrated + newOffset) * 10) / 10;
+      updatedSettings.voltageTrimOffset = newOffset;
+      updateSettings({ voltageTrimOffset: newOffset });
+
+      if (latestReading) {
+        setLatestReading(prev => prev ? { ...prev, voltage_v: calculatedNew } : prev);
+      }
+
+      result = {
+        success: true,
+        action: actionType,
+        parameter: 'Tegangan AC True-RMS (ZMPT101B)',
+        unit: 'Volt RMS',
+        oldValue: rawReading,
+        newValue: calculatedNew,
+        offset: newOffset,
+        notes: args.explanation || `Offset tegangan disesuaikan menjadi ${newOffset > 0 ? '+' : ''}${newOffset} V`,
+      };
+    } else if (actionType === 'calibrate_temperature') {
+      const rawReading = latestReading?.temperature_c ?? 25.0;
+      const oldOffset = Number(settings.tempTrimOffset) || 0;
+      const baseUncalibrated = rawReading - oldOffset;
+
+      let newOffset = 0;
+      if (args.offset_celsius !== undefined && args.offset_celsius !== null) {
+        newOffset = Math.round(Number(args.offset_celsius) * 10) / 10;
+      } else if (args.target_temp !== undefined && args.target_temp !== null) {
+        newOffset = Math.round((Number(args.target_temp) - baseUncalibrated) * 10) / 10;
+      }
+
+      const calculatedNew = Math.round((baseUncalibrated + newOffset) * 10) / 10;
+      updatedSettings.tempTrimOffset = newOffset;
+      updateSettings({ tempTrimOffset: newOffset });
+
+      if (latestReading) {
+        setLatestReading(prev => prev ? { ...prev, temperature_c: calculatedNew } : prev);
+      }
+
+      result = {
+        success: true,
+        action: actionType,
+        parameter: 'Suhu Udara Evaporator / Ruangan (SHT31)',
+        unit: '°C',
+        oldValue: rawReading,
+        newValue: calculatedNew,
+        offset: newOffset,
+        notes: args.explanation || `Offset suhu disesuaikan menjadi ${newOffset > 0 ? '+' : ''}${newOffset} °C`,
+      };
+    } else if (actionType === 'calibrate_humidity') {
+      const rawReading = latestReading?.humidity_rh ?? 60.0;
+      const oldOffset = Number(settings.humidityTrimOffset) || 0;
+      const baseUncalibrated = rawReading - oldOffset;
+
+      let newOffset = 0;
+      if (args.offset_humidity !== undefined && args.offset_humidity !== null) {
+        newOffset = Math.round(Number(args.offset_humidity) * 10) / 10;
+      } else if (args.target_humidity !== undefined && args.target_humidity !== null) {
+        newOffset = Math.round((Number(args.target_humidity) - baseUncalibrated) * 10) / 10;
+      }
+
+      const calculatedNew = Math.min(100, Math.max(0, Math.round((baseUncalibrated + newOffset) * 10) / 10));
+      updatedSettings.humidityTrimOffset = newOffset;
+      updateSettings({ humidityTrimOffset: newOffset });
+
+      if (latestReading) {
+        setLatestReading(prev => prev ? { ...prev, humidity_rh: calculatedNew } : prev);
+      }
+
+      result = {
+        success: true,
+        action: actionType,
+        parameter: 'Kelembapan Udara (SHT31)',
+        unit: '%RH',
+        oldValue: rawReading,
+        newValue: calculatedNew,
+        offset: newOffset,
+        notes: args.explanation || `Offset kelembapan disesuaikan menjadi ${newOffset > 0 ? '+' : ''}${newOffset} %RH`,
+      };
+    } else if (actionType === 'calibrate_compressor_rpm') {
+      const currentRpm = latestRpmReading ? Number(latestRpmReading.estimated_rpm ?? latestRpmReading.rpm ?? 0) : 0;
+      const oldPoles = activeCompressorProfile.motor_poles || 4;
+      const newPoles = args.motor_poles ? parseInt(args.motor_poles, 10) : oldPoles;
+      const oldMult = Number(settings.rpmMultiplier) || 1.0;
+      let newMult = args.rpm_multiplier ? Math.round(Number(args.rpm_multiplier) * 100) / 100 : oldMult;
+
+      if (args.target_rpm && currentRpm > 0) {
+        newMult = Math.round((Number(args.target_rpm) / (currentRpm / oldMult)) * 100) / 100;
+      }
+
+      updatedSettings.rpmMultiplier = newMult;
+      updatedProfile = {
+        ...activeCompressorProfile,
+        motor_poles: newPoles,
+        pulses_per_revolution: newPoles / 2,
+        is_calibrated: true
+      };
+
+      updateSettings({ rpmMultiplier: newMult });
+      updateCompressorProfile(updatedProfile);
+
+      const calcNewRpm = Math.round(currentRpm * (newMult / oldMult) * (oldPoles / newPoles));
+      if (latestRpmReading) {
+        setLatestRpmReading(prev => prev ? { ...prev, estimated_rpm: calcNewRpm, rpm: calcNewRpm } : prev);
+      }
+
+      result = {
+        success: true,
+        action: actionType,
+        parameter: 'Kecepatan Kompresor Inverter (RPM)',
+        unit: 'RPM',
+        oldValue: `${currentRpm} RPM (${oldPoles}-Pole, x${oldMult})`,
+        newValue: `${calcNewRpm} RPM (${newPoles}-Pole, x${newMult})`,
+        offset: `Kutub: ${newPoles}-Pole, Mult: ${newMult}`,
+        notes: args.explanation || `Konfigurasi kompresor disetel ke ${newPoles}-Pole dengan multiplier ${newMult}`,
+      };
+    } else if (actionType === 'reset_calibration') {
+      const param = (args.parameter || 'all').toLowerCase();
+      if (param === 'voltage' || param === 'all') {
+        updatedSettings.voltageTrimOffset = 0.0;
+      }
+      if (param === 'temperature' || param === 'all') {
+        updatedSettings.tempTrimOffset = 0.0;
+      }
+      if (param === 'humidity' || param === 'all') {
+        updatedSettings.humidityTrimOffset = 0.0;
+      }
+      if (param === 'rpm' || param === 'all') {
+        updatedSettings.rpmMultiplier = 1.0;
+        updatedProfile = {
+          ...activeCompressorProfile,
+          motor_poles: 4,
+          pulses_per_revolution: 2.0,
+        };
+        updateCompressorProfile(updatedProfile);
+      }
+
+      updateSettings(updatedSettings);
+
+      result = {
+        success: true,
+        action: actionType,
+        parameter: param === 'all' ? 'Semua Parameter Sensor' : param.toUpperCase(),
+        unit: '-',
+        oldValue: 'Kalibrasi Kustom',
+        newValue: 'Standar Default (0 / 1.0)',
+        offset: 0,
+        notes: args.explanation || `Kalibrasi parameter [${param}] berhasil di-reset ke nilai default pabrik.`,
+      };
+    }
+
+    // Simpan permanen ke Supabase Cloud & Broadcast ke semua layar/koneksi aktif
+    const { cloudSaved } = await persistCalibrationToCloud(updatedSettings, updatedProfile);
+    result.cloudSaved = cloudSaved;
+
+    return result;
+  }, [settings, activeCompressorProfile, latestReading, latestRpmReading, updateSettings, updateCompressorProfile, persistCalibrationToCloud]);
+
+  // --------------------------------------------------------------------------
   // LOAD PERANGKAT & INITIAL READINGS DARI SUPABASE
   // --------------------------------------------------------------------------
   const loadInitialData = useCallback(async () => {
@@ -476,6 +764,54 @@ export function AppProvider({ children }) {
     }
 
     try {
+      // 0. Ambil Kalibrasi Permanen Terkini dari Supabase Cloud (tabel compressor_profiles)
+      let effectiveSettings = { ...settings };
+      try {
+        const { data: profData, error: profErr } = await client
+          .from('compressor_profiles')
+          .select('*')
+          .eq('id', 'universal')
+          .single();
+
+        if (!profErr && profData && profData.notes) {
+          try {
+            const parsedNotes = JSON.parse(profData.notes);
+            if (parsedNotes && parsedNotes.calibration) {
+              const cal = parsedNotes.calibration;
+              console.log('📥 Memuat kalibrasi permanen dari Supabase Cloud:', cal);
+              effectiveSettings = {
+                ...effectiveSettings,
+                voltageTrimOffset: cal.voltageTrimOffset !== undefined ? Number(cal.voltageTrimOffset) : effectiveSettings.voltageTrimOffset,
+                tempTrimOffset: cal.tempTrimOffset !== undefined ? Number(cal.tempTrimOffset) : effectiveSettings.tempTrimOffset,
+                humidityTrimOffset: cal.humidityTrimOffset !== undefined ? Number(cal.humidityTrimOffset) : effectiveSettings.humidityTrimOffset,
+                rpmMultiplier: cal.rpmMultiplier !== undefined ? Number(cal.rpmMultiplier) : effectiveSettings.rpmMultiplier,
+              };
+
+              setSettings((prev) => {
+                const merged = { ...prev, ...effectiveSettings };
+                localStorage.setItem('ac_datalogger_settings', JSON.stringify(merged));
+                return merged;
+              });
+
+              if (cal.motor_poles) {
+                setActiveCompressorProfile((prev) => {
+                  const updated = {
+                    ...prev,
+                    motor_poles: Number(cal.motor_poles),
+                    pulses_per_revolution: Number(cal.motor_poles) / 2,
+                    is_calibrated: true
+                  };
+                  localStorage.setItem('ac_datalogger_compressor_profile', JSON.stringify(updated));
+                  return updated;
+                });
+              }
+            }
+          } catch (_e) {}
+        }
+      } catch (errCal) {
+        console.warn('Gagal membaca kalibrasi cloud saat init:', errCal);
+      }
+
       // 1. Ambil daftar devices
       const savedLocal = localStorage.getItem('ac_datalogger_devices');
       let localMap = {};
@@ -516,12 +852,31 @@ export function AppProvider({ children }) {
         .limit(60);
 
       if (!readErr && readingsData && readingsData.length > 0) {
-        const offset = Number(settings.voltageTrimOffset) || 0;
+        const vOffset = Number(effectiveSettings.voltageTrimOffset) || 0;
+        const tOffset = Number(effectiveSettings.tempTrimOffset) || 0;
+        const hOffset = Number(effectiveSettings.humidityTrimOffset) || 0;
+
         const chronological = [...readingsData].reverse().map(r => {
-          if (offset !== 0 && r.voltage_v != null && Number(r.voltage_v) > 10) {
-            return { ...r, voltage_v: Math.round((Number(r.voltage_v) + offset) * 10) / 10 };
+          let v = r.voltage_v != null ? Number(r.voltage_v) : (r.voltage_rms != null ? Number(r.voltage_rms) : null);
+          let t = r.temperature_c != null ? Number(r.temperature_c) : null;
+          let h = r.humidity_rh != null ? Number(r.humidity_rh) : null;
+
+          if (v != null && v > 10 && vOffset !== 0) {
+            v = Math.round((v + vOffset) * 10) / 10;
           }
-          return r;
+          if (t != null && tOffset !== 0) {
+            t = Math.round((t + tOffset) * 10) / 10;
+          }
+          if (h != null && hOffset !== 0) {
+            h = Math.max(0, Math.min(100, Math.round((h + hOffset) * 10) / 10));
+          }
+
+          return {
+            ...r,
+            ...(v != null ? { voltage_v: v } : {}),
+            ...(t != null ? { temperature_c: t } : {}),
+            ...(h != null ? { humidity_rh: h } : {}),
+          };
         });
         setRealtimeBuffer(chronological);
         const latest = chronological[chronological.length - 1];
@@ -542,7 +897,17 @@ export function AppProvider({ children }) {
           .limit(60);
 
         if (!rpmErr && rpmData && rpmData.length > 0) {
-          const chronologicalRpm = [...rpmData].reverse();
+          const rpmMult = Number(effectiveSettings.rpmMultiplier) || 1.0;
+          const chronologicalRpm = [...rpmData].reverse().map(r => {
+            if (rpmMult !== 1.0) {
+              const rawRpm = Number(r.estimated_rpm ?? r.rpm ?? 0);
+              if (rawRpm > 0) {
+                const adjustedRpm = Math.max(0, Math.round(rawRpm * rpmMult));
+                return { ...r, estimated_rpm: adjustedRpm, rpm: adjustedRpm };
+              }
+            }
+            return r;
+          });
           setRpmRealtimeBuffer(chronologicalRpm);
           const latestRpm = chronologicalRpm[chronologicalRpm.length - 1];
           setLatestRpmReading(latestRpm);
@@ -560,6 +925,7 @@ export function AppProvider({ children }) {
   // --------------------------------------------------------------------------
   // SUPABASE REALTIME SUBSCRIPTION
   // Berlangganan event INSERT pada tabel ac_readings & compressor_rpm_measurements
+  // Serta channel broadcast system_calibration_sync untuk update instan multi-device
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (isSimulating) {
@@ -633,9 +999,52 @@ export function AppProvider({ children }) {
 
     rpmChannelRef.current = channelRPM;
 
+    // Channel 3: Realtime Broadcast Synchronization untuk Kalibrasi antar Perangkat
+    if (syncChannelRef.current) {
+      client.removeChannel(syncChannelRef.current);
+    }
+
+    const channelSync = client
+      .channel('system_calibration_sync')
+      .on('broadcast', { event: 'CALIBRATION_UPDATE' }, (payload) => {
+        if (payload && payload.payload && payload.payload.calibration) {
+          const cal = payload.payload.calibration;
+          console.log('⚡ Sinkronisasi Kalibrasi Real-time Diterima dari Perangkat Lain / AI:', cal);
+
+          setSettings((prev) => {
+            const merged = {
+              ...prev,
+              voltageTrimOffset: cal.voltageTrimOffset !== undefined ? Number(cal.voltageTrimOffset) : prev.voltageTrimOffset,
+              tempTrimOffset: cal.tempTrimOffset !== undefined ? Number(cal.tempTrimOffset) : prev.tempTrimOffset,
+              humidityTrimOffset: cal.humidityTrimOffset !== undefined ? Number(cal.humidityTrimOffset) : prev.humidityTrimOffset,
+              rpmMultiplier: cal.rpmMultiplier !== undefined ? Number(cal.rpmMultiplier) : prev.rpmMultiplier,
+            };
+            localStorage.setItem('ac_datalogger_settings', JSON.stringify(merged));
+            return merged;
+          });
+
+          if (cal.motor_poles) {
+            setActiveCompressorProfile((prev) => {
+              const updated = {
+                ...prev,
+                motor_poles: Number(cal.motor_poles),
+                pulses_per_revolution: Number(cal.motor_poles) / 2,
+                is_calibrated: true
+              };
+              localStorage.setItem('ac_datalogger_compressor_profile', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      })
+      .subscribe();
+
+    syncChannelRef.current = channelSync;
+
     return () => {
       if (channelAC) client.removeChannel(channelAC);
       if (channelRPM) client.removeChannel(channelRPM);
+      if (channelSync) client.removeChannel(channelSync);
     };
   }, [selectedDeviceId, isSimulating, loadInitialData, appendReading, appendRpmReading]);
 
@@ -666,6 +1075,8 @@ export function AppProvider({ children }) {
         loadInitialData,
         resetChartBuffer,
         resetStoredData,
+        persistCalibrationToCloud,
+        applyAiCalibration,
       }}
     >
       {children}

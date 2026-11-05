@@ -21,10 +21,13 @@ import { useApp } from '../context/AppContext';
 import { testSupabaseConnection, resetSupabaseClient } from '../services/supabase';
 
 export default function SettingsPage() {
-  const { settings, updateSettings, isSimulating, toggleSimulation, loadInitialData } = useApp();
+  const { settings, updateSettings, persistCalibrationToCloud, isSimulating, toggleSimulation, loadInitialData } = useApp();
 
   const [formSettings, setFormSettings] = useState(() => ({
     voltageTrimOffset: 0.0,
+    tempTrimOffset: 0.0,
+    humidityTrimOffset: 0.0,
+    rpmMultiplier: 1.0,
     ...settings,
   }));
 
@@ -41,18 +44,28 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const handleSaveSettings = (e) => {
+  const handleSaveSettings = async (e) => {
     e.preventDefault();
-    updateSettings({
+    const updated = {
       voltageLow: parseFloat(formSettings.voltageLow),
       voltageHigh: parseFloat(formSettings.voltageHigh),
       voltageTrimOffset: parseFloat(formSettings.voltageTrimOffset || 0),
       tempLow: parseFloat(formSettings.tempLow),
       tempHigh: parseFloat(formSettings.tempHigh),
+      tempTrimOffset: parseFloat(formSettings.tempTrimOffset || 0),
       humidityLow: parseFloat(formSettings.humidityLow),
       humidityHigh: parseFloat(formSettings.humidityHigh),
+      humidityTrimOffset: parseFloat(formSettings.humidityTrimOffset || 0),
+      rpmMultiplier: parseFloat(formSettings.rpmMultiplier || 1.0),
       bufferLimit: parseInt(formSettings.bufferLimit, 10),
-    });
+    };
+
+    updateSettings(updated);
+
+    // Simpan permanen ke Supabase Cloud & Broadcast ke seluruh perangkat
+    if (persistCalibrationToCloud) {
+      await persistCalibrationToCloud(updated);
+    }
 
     // Simpan kredensial Supabase (bersihkan URL dari path tambahan)
     const cleanUrl = supabaseUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
@@ -152,45 +165,219 @@ export default function SettingsPage() {
 
           </div>
 
-          {/* Kalibrasi & Koreksi Offset Tegangan AC RMS (Cepat di Web) */}
-          <div className="p-3.5 rounded-lg bg-industrial-950 border border-industrial-800/80">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1.5">
-              <label className="text-xs font-mono font-bold text-amber-400 flex items-center">
-                <span>Koreksi Cepat Offset Voltase (Trim Offset):</span>
-                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-amber-950/80 text-amber-300 border border-amber-500/40">
-                  {Number(formSettings.voltageTrimOffset || 0) > 0 ? `+${formSettings.voltageTrimOffset}` : formSettings.voltageTrimOffset || 0} Volt
-                </span>
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFormSettings({ ...formSettings, voltageTrimOffset: 5.0 })}
-                  className="px-2 py-1 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/50 text-amber-300 rounded text-[10px] font-mono cursor-pointer transition-colors"
-                >
-                  +5.0V (Koreksi ESP Lebih Rendah)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormSettings({ ...formSettings, voltageTrimOffset: 0.0 })}
-                  className="px-2 py-1 bg-industrial-900 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer transition-colors"
-                >
-                  Reset (0.0V)
-                </button>
+          {/* Kalibrasi & Koreksi Offset Sensor (Multi-Device & AI Synced) */}
+          <div className="p-4 rounded-xl bg-industrial-950 border border-industrial-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-industrial-800/80 pb-2.5">
+              <div>
+                <h4 className="text-xs font-mono font-bold text-amber-400 flex items-center">
+                  <Sliders className="w-3.5 h-3.5 mr-1.5 text-amber-400" />
+                  Koreksi Offset & Kalibrasi Sensor (Tersinkronisasi Cloud & AI)
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Nilai kalibrasi di bawah ini tersimpan permanen di cloud dan otomatis disinkronkan ke seluruh perangkat. Anda juga dapat mengubahnya otomatis via perintah chat di menu AI Diagnosa.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setFormSettings({
+                  ...formSettings,
+                  voltageTrimOffset: 0.0,
+                  tempTrimOffset: 0.0,
+                  humidityTrimOffset: 0.0,
+                  rpmMultiplier: 1.0,
+                })}
+                className="px-2.5 py-1 bg-industrial-900 hover:bg-industrial-850 border border-industrial-700 text-slate-300 rounded text-[10px] font-mono cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto"
+              >
+                Reset Semua Kalibrasi
+              </button>
             </div>
-            <p className="text-[11px] text-slate-400 mb-2">
-              Kompensasi selisih pembacaan antara ESP32 dan Multimeter True-RMS langsung di dashboard tanpa harus re-flash firmware via USB.
-            </p>
-            <div className="relative max-w-xs">
-              <input
-                type="number"
-                step="0.1"
-                value={formSettings.voltageTrimOffset ?? 0}
-                onChange={(e) => setFormSettings({ ...formSettings, voltageTrimOffset: e.target.value })}
-                className="w-full bg-industrial-900 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-400 font-bold"
-                placeholder="0.0"
-              />
-              <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">Volt</span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Offset Tegangan AC */}
+              <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono text-slate-300 font-semibold">
+                    Offset Tegangan AC (ZMPT101B):
+                  </label>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 text-amber-300 border border-amber-500/40">
+                    {Number(formSettings.voltageTrimOffset || 0) > 0 ? `+${formSettings.voltageTrimOffset}` : formSettings.voltageTrimOffset || 0} V
+                  </span>
+                </div>
+                <div className="relative mb-2">
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formSettings.voltageTrimOffset ?? 0}
+                    onChange={(e) => setFormSettings({ ...formSettings, voltageTrimOffset: e.target.value })}
+                    className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-400 font-bold"
+                    placeholder="0.0"
+                  />
+                  <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">Volt</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, voltageTrimOffset: 5.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    +5.0V
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, voltageTrimOffset: -5.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    -5.0V
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, voltageTrimOffset: 0.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    0.0V
+                  </button>
+                </div>
+              </div>
+
+              {/* Offset Suhu Ruangan */}
+              <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono text-slate-300 font-semibold">
+                    Offset Suhu Udara (SHT31):
+                  </label>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-950/80 text-rose-300 border border-rose-500/40">
+                    {Number(formSettings.tempTrimOffset || 0) > 0 ? `+${formSettings.tempTrimOffset}` : formSettings.tempTrimOffset || 0} °C
+                  </span>
+                </div>
+                <div className="relative mb-2">
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={formSettings.tempTrimOffset ?? 0}
+                    onChange={(e) => setFormSettings({ ...formSettings, tempTrimOffset: e.target.value })}
+                    className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-rose-400 font-bold"
+                    placeholder="0.0"
+                  />
+                  <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">°C</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, tempTrimOffset: -2.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    -2.0°C
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, tempTrimOffset: 2.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    +2.0°C
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, tempTrimOffset: 0.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    0.0°C
+                  </button>
+                </div>
+              </div>
+
+              {/* Offset Kelembapan Udara */}
+              <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono text-slate-300 font-semibold">
+                    Offset Kelembapan (SHT31):
+                  </label>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                    {Number(formSettings.humidityTrimOffset || 0) > 0 ? `+${formSettings.humidityTrimOffset}` : formSettings.humidityTrimOffset || 0} %RH
+                  </span>
+                </div>
+                <div className="relative mb-2">
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={formSettings.humidityTrimOffset ?? 0}
+                    onChange={(e) => setFormSettings({ ...formSettings, humidityTrimOffset: e.target.value })}
+                    className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 font-bold"
+                    placeholder="0.0"
+                  />
+                  <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">%RH</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, humidityTrimOffset: 5.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    +5.0%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, humidityTrimOffset: -5.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    -5.0%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, humidityTrimOffset: 0.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    0.0%
+                  </button>
+                </div>
+              </div>
+
+              {/* Faktor Pengali RPM Kompresor */}
+              <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono text-slate-300 font-semibold">
+                    Pengali Kecepatan Kompresor:
+                  </label>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                    x{formSettings.rpmMultiplier || 1.0}
+                  </span>
+                </div>
+                <div className="relative mb-2">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.1"
+                    max="5.0"
+                    value={formSettings.rpmMultiplier ?? 1.0}
+                    onChange={(e) => setFormSettings({ ...formSettings, rpmMultiplier: e.target.value })}
+                    className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-400 font-bold"
+                    placeholder="1.0"
+                  />
+                  <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">Factor</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 1.0 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    x1.0 (Standar)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 0.95 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    x0.95 (-5%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 1.05 })}
+                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
+                  >
+                    x1.05 (+5%)
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

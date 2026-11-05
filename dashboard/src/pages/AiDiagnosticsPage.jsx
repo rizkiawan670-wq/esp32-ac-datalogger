@@ -27,6 +27,7 @@ import {
   Activity,
   Layers,
   HelpCircle,
+  Database,
   X
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -45,6 +46,7 @@ export default function AiDiagnosticsPage() {
     activeCompressorProfile,
     isDeviceOnline,
     settings,
+    applyAiCalibration,
   } = useApp();
 
   // State Modal Konfigurasi API Key
@@ -108,6 +110,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
     humidity: currentHumidity,
     rpm: currentRpm,
     isRunning: isRunning,
+    motorPoles: activeCompressorProfile?.motor_poles || 4,
     speedCategory: latestRpmReading?.speed_category || (currentRpm < 400 ? 'OFF' : 'LOW'),
     profileName: activeCompressorProfile ? `${activeCompressorProfile.brand} (${activeCompressorProfile.motor_poles} Pole)` : 'Universal Inverter',
     settings: settings
@@ -166,7 +169,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
     }, 1200);
   };
 
-  // Kirim Pertanyaan (Full AI Online)
+  // Kirim Pertanyaan (Full AI Online dengan Eksekusi Kalibrasi Otomatis)
   const handleSendMessage = async (textToSend = null) => {
     const query = (textToSend || inputPrompt).trim();
     if (!query || isGenerating) return;
@@ -203,7 +206,14 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
     const userTimestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
     // Salin history sebelum pesan baru ditambahkan (agar turn tetap alternate user -> model)
-    const historyBeforeNewPrompt = messages.filter(m => m.id !== 'welcome' && m.source !== 'warning');
+    const historyBeforeNewPrompt = messages
+      .filter(m => m.id !== 'welcome' && m.source !== 'warning')
+      .map(m => ({
+        role: m.role,
+        text: m.isCalibrationResult 
+          ? `[Sistem: Kalibrasi ${m.calibrationData?.parameter} berhasil diterapkan. Offset: ${m.calibrationData?.offset}] ${m.text || ''}`
+          : m.text
+      }));
 
     const newMessages = [
       ...messages,
@@ -230,17 +240,37 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
       const assistantMessageId = `assistant_${Date.now()}`;
       const assistantTimestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantMessageId,
-          role: 'assistant',
-          text: result.text,
-          timestamp: assistantTimestamp,
-          source: result.source,
-          model: result.model
-        }
-      ]);
+      // Jika Google Gemini memutuskan untuk memanggil Tool Kalibrasi
+      if (result.functionCall) {
+        const { name, args } = result.functionCall;
+        const calResult = await applyAiCalibration(name, args);
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantMessageId,
+            role: 'assistant',
+            isCalibrationResult: true,
+            calibrationData: calResult,
+            text: args.explanation || result.text || `Kalibrasi otomatis untuk ${calResult.parameter} berhasil diterapkan.`,
+            timestamp: assistantTimestamp,
+            source: 'gemini_tool',
+            model: result.model
+          }
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantMessageId,
+            role: 'assistant',
+            text: result.text,
+            timestamp: assistantTimestamp,
+            source: result.source,
+            model: result.model
+          }
+        ]);
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -258,15 +288,40 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
     }
   };
 
-  // Quick Prompt Chips
+  // Quick Prompt Chips (Termasuk Kalibrasi Cepat Otomatis)
   const quickPrompts = [
     {
       icon: Zap,
+      label: '⚡ Kalibrasi Voltase (+5V)',
+      query: 'Multimeter saya terbaca 225V sedangkan dashboard terbaca 220V, tolong kalibrasi voltase agar sesuai multimeter.'
+    },
+    {
+      icon: Thermometer,
+      label: '🌡️ Kalibrasi Suhu (-2°C)',
+      query: 'Termometer ruangan terbaca 24.5°C sedangkan sensor terbaca 26.5°C, tolong kalibrasi suhu.'
+    },
+    {
+      icon: Droplets,
+      label: '💧 Kalibrasi Kelembaban (+4%)',
+      query: 'Higrometer saya terbaca 62% sedangkan di dashboard 58%, tolong kalibrasi kelembaban.'
+    },
+    {
+      icon: RotateCw,
+      label: '🔄 Kompresor 6-Pole',
+      query: 'Tolong ubah setting kutub kompresor menjadi 6-pole (LG Twin Rotary).'
+    },
+    {
+      icon: Trash2,
+      label: '⚙️ Reset Semua Kalibrasi',
+      query: 'Tolong reset semua parameter kalibrasi sensor ke standar pabrik / default 0.'
+    },
+    {
+      icon: Activity,
       label: 'Analisis Kondisi Saat Ini',
       query: 'Bagaimana analisis kondisi telemetri sistem saat ini berdasarkan tegangan True-RMS, suhu, dan RPM kompresor aktual?'
     },
     {
-      icon: Activity,
+      icon: Layers,
       label: 'Alur Proses Aplikasi',
       query: 'Jelaskan alur dan proses kerja sistem AC datalogger ini dari mikrokontroler ESP32 hingga tampil di dashboard web.'
     },
@@ -274,21 +329,6 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
       icon: Gauge,
       label: 'Cara Kerja Estimasi RPM',
       query: 'Bagaimana cara sistem menghitung dan memperkirakan RPM motor kompresor inverter dari frekuensi sinyal driver?'
-    },
-    {
-      icon: Layers,
-      label: 'Perhitungan True-RMS',
-      query: 'Bagaimana algoritma ESP32 menghitung tegangan True-RMS dari modul sensor ZMPT101B?'
-    },
-    {
-      icon: Thermometer,
-      label: 'Mengapa SHT31 Error -99.9?',
-      query: 'Kenapa sensor SHT31 sempat membaca nilai -99.9°C saat kompresor menyala dan bagaimana solusinya di firmware?'
-    },
-    {
-      icon: HelpCircle,
-      label: 'Panduan Kalibrasi Sensor',
-      query: 'Bagaimana langkah-langkah kalibrasi sensor ZMPT101B dan konfigurasi rasio kutub motor kompresor?'
     }
   ];
 
@@ -606,17 +646,17 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
                   {!isUser && msg.model && (
                     <div className="flex items-center justify-between border-b border-industrial-800/80 pb-1.5 mb-2 text-[10px] font-mono text-slate-400">
                       <span className={`flex items-center space-x-1 ${
-                        msg.source === 'gemini' 
+                        msg.source === 'gemini' || msg.source === 'gemini_tool'
                           ? 'text-emerald-400 font-bold' 
                           : msg.source === 'error' 
                           ? 'text-rose-400 font-semibold' 
                           : 'text-amber-400 font-semibold'
                       }`}>
-                        <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' ? 'text-emerald-400' : 'text-amber-400'}`} />
+                        <Sparkles className={`w-3 h-3 ${msg.source === 'gemini' || msg.source === 'gemini_tool' ? 'text-emerald-400' : 'text-amber-400'}`} />
                         <span>{msg.model}</span>
-                        {msg.source === 'gemini' && (
+                        {(msg.source === 'gemini' || msg.source === 'gemini_tool') && (
                           <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/50 font-bold">
-                            FULL AI ONLINE
+                            {msg.source === 'gemini_tool' ? '⚡ KALIBRASI AI AKTIF' : 'FULL AI ONLINE'}
                           </span>
                         )}
                       </span>
@@ -637,6 +677,70 @@ Silakan pilih topik cepat di bawah atau ketik langsung pertanyaan Anda:`,
                           </>
                         )}
                       </button>
+                    </div>
+                  )}
+
+                  {/* Calibration Action Card (Jika aksi kalibrasi dieksekusi) */}
+                  {msg.isCalibrationResult && msg.calibrationData && (
+                    <div className="mb-3 p-3.5 rounded-xl bg-industrial-900 border border-emerald-500/50 shadow-inner">
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-industrial-800">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1.5 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-500/50">
+                            <Check className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-mono font-bold text-emerald-400 block tracking-wider">
+                              KALIBRASI OTOMATIS SUKSES DITERAPKAN
+                            </span>
+                            <span className="text-xs font-bold text-white font-mono">
+                              {msg.calibrationData.parameter}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-bold">
+                          AKTIF
+                        </span>
+                      </div>
+
+                      {/* Metric Comparison Grid */}
+                      <div className="grid grid-cols-3 gap-2 text-center font-mono my-2.5">
+                        <div className="bg-industrial-950 p-2 rounded-lg border border-industrial-800">
+                          <span className="text-[10px] text-slate-500 block">NILAI SEBELUM</span>
+                          <span className="text-xs font-bold text-slate-300">
+                            {typeof msg.calibrationData.oldValue === 'number' 
+                              ? `${msg.calibrationData.oldValue} ${msg.calibrationData.unit}`
+                              : msg.calibrationData.oldValue || '-'}
+                          </span>
+                        </div>
+                        <div className="bg-industrial-950 p-2 rounded-lg border border-amber-500/40">
+                          <span className="text-[10px] text-amber-400 block">OFFSET KOREKSI</span>
+                          <span className="text-xs font-bold text-amber-300">
+                            {typeof msg.calibrationData.offset === 'number'
+                              ? `${msg.calibrationData.offset > 0 ? '+' : ''}${msg.calibrationData.offset} ${msg.calibrationData.unit}`
+                              : msg.calibrationData.offset}
+                          </span>
+                        </div>
+                        <div className="bg-industrial-950 p-2 rounded-lg border border-emerald-500/40">
+                          <span className="text-[10px] text-emerald-400 block">NILAI SETELAH</span>
+                          <span className="text-xs font-bold text-emerald-300">
+                            {typeof msg.calibrationData.newValue === 'number'
+                              ? `${msg.calibrationData.newValue} ${msg.calibrationData.unit}`
+                              : msg.calibrationData.newValue || '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cloud Sync & Multi-Device Sync Badges */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-industrial-800/80 text-[10px] font-mono">
+                        <span className="flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-500/40">
+                          <Database className="w-3 h-3 text-blue-400" />
+                          <span>Tersimpan Permanen di Supabase Cloud</span>
+                        </span>
+                        <span className="flex items-center space-x-1 px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-500/40">
+                          <Activity className="w-3 h-3 text-purple-400" />
+                          <span>Tersinkronisasi Real-time ke Semua Layar & Perangkat</span>
+                        </span>
+                      </div>
                     </div>
                   )}
 
