@@ -203,39 +203,14 @@ export const CALIBRATION_TOOLS = [
     }
   },
   {
-    name: 'calibrate_compressor_rpm',
-    description: 'Kalibrasi perhitungan kecepatan kompresor inverter (RPM). Panggil fungsi ini saat pengguna ingin mengubah konfigurasi kutub motor (motor poles) kompresor (misal 2, 4, 6, 8 pole) atau menyesuaikan faktor pengali RPM berdasarkan pembacaan tachometer.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        motor_poles: {
-          type: 'INTEGER',
-          description: 'Jumlah kutub magnet motor kompresor BLDC/Inverter (biasanya 2, 4, 6, atau 8 pole). Default universal adalah 4 pole.'
-        },
-        rpm_multiplier: {
-          type: 'NUMBER',
-          description: 'Faktor pengali koreksi RPM (misal 1.05 untuk naik 5%, atau 0.8 untuk turun 20%).'
-        },
-        target_rpm: {
-          type: 'NUMBER',
-          description: 'Nilai target RPM aktual jika diukur dengan tachometer eksternal.'
-        },
-        explanation: {
-          type: 'STRING',
-          description: 'Penjelasan konfigurasi kutub kompresor atau perhitungan pengali RPM.'
-        }
-      }
-    }
-  },
-  {
     name: 'reset_calibration',
-    description: 'Mereset nilai kalibrasi (offset voltase, suhu, kelembaban, dan RPM) kembali ke pengaturan standar/pabrik (0.0 atau default).',
+    description: 'Mereset nilai kalibrasi (offset voltase, suhu, dan kelembapan) kembali ke pengaturan standar/pabrik (0.0 atau default).',
     parameters: {
       type: 'OBJECT',
       properties: {
         parameter: {
           type: 'STRING',
-          description: 'Parameter yang ingin di-reset: "all", "voltage", "temperature", "humidity", atau "rpm".'
+          description: 'Parameter yang ingin di-reset: "all", "voltage", "temperature", atau "humidity".'
         },
         explanation: {
           type: 'STRING',
@@ -255,18 +230,17 @@ Anda adalah "Agent AI", asisten AI online cerdas yang merupakan pakar teknik ele
 
 TUGAS UTAMA:
 1. Menjawab pertanyaan teknis pengguna secara cerdas, ilmiah, dan mendalam.
-2. Menganalisis kondisi data telemetri AC True-RMS, suhu, kelembapan, dan putaran kompresor (RPM) secara real-time.
+2. Menganalisis kondisi data telemetri AC True-RMS, suhu udara, kelembapan relatif, dan titik embun (dew point) secara real-time.
 3. Memberikan panduan troubleshooting akurat untuk hardware ESP32, sensor ZMPT101B, sensor SHT31, jalur WiFi, dan database Supabase.
 4. Menjelaskan arsitektur dan alur proses aplikasi dari sensor fisik hingga dashboard web.
-5. MENGKALIBRASI SENSOR SECARA OTOMATIS: Pengguna dapat meminta kalibrasi voltase, suhu, kelembapan, atau RPM langsung melalui percakapan tanpa membuka laptop atau mengedit kodingan!
+5. MENGKALIBRASI SENSOR SECARA OTOMATIS: Pengguna dapat meminta kalibrasi voltase, suhu, atau kelembapan langsung melalui percakapan tanpa membuka laptop atau mengedit kodingan!
 
 KEMAMPUAN KALIBRASI OTOMATIS (TOOLS):
 Anda memiliki tool resmi untuk mengkalibrasi sensor secara langsung:
 - \`calibrate_voltage\`: Panggil fungsi ini jika pengguna melaporkan selisih tegangan dengan multimeter atau meminta penyesuaian voltase. Hitung offset yang diperlukan (misal: multimeter 224V, dashboard 218V -> offset = +6.0V).
 - \`calibrate_temperature\`: Panggil fungsi ini jika ada selisih suhu dengan termometer ruangan (misal: termometer 24°C, dashboard 26.5°C -> offset = -2.5°C).
 - \`calibrate_humidity\`: Panggil fungsi ini jika ada selisih kelembapan dengan higrometer (misal: higrometer 62%, dashboard 58% -> offset = +4.0%RH).
-- \`calibrate_compressor_rpm\`: Panggil fungsi ini jika pengguna ingin mengubah kutub motor kompresor (misal Daikin 4-pole, LG Twin Rotary 6-pole, Samsung 8-pole) atau menyesuaikan multiplier RPM.
-- \`reset_calibration\`: Panggil fungsi ini jika pengguna ingin mereset kalibrasi ke nilai standar (0 / 1.0).
+- \`reset_calibration\`: Panggil fungsi ini jika pengguna ingin mereset kalibrasi ke nilai standar (0.0).
 
 Hasil kalibrasi dari pemanggilan fungsi akan disimpan PERMANEN ke Supabase Cloud dan disiarkan (broadcast) secara instan ke SEMUA layar dan perangkat yang sedang terhubung!
 
@@ -274,7 +248,7 @@ KARAKTERISTIK HARDWARE & SISTEM IOT:
 - Mikrokontroler: ESP32 Dual-Core 240MHz dengan FreeRTOS.
 - Sensor Tegangan Listrik AC: ZMPT101B modul trafo isolasi presisi (sampling True-RMS diskret pada gelombang 50Hz PLN, nominal 220 VAC ±10% / 198V - 242V).
 - Sensor Lingkungan: Sensirion SHT31-D via bus I2C (Address 0x44, bus recovery, auto-retry 2x, valid cache).
-- Estimasi Kecepatan Kompresor: Mengukur frekuensi modulasi fasa inverter f (Hz) dari optocoupler terisolasi, dihitung dengan formula RPM = (120 * f) / P (P = 4 poles motor). Rentang kerja: 0 - 4500 RPM.
+- Analisis Titik Embun: Perhitungan Dew Point menggunakan aproksimasi Magnus-Tetens untuk mendeteksi ambang batas kondensasi termal.
 - Komunikasi Data: WiFi HTTP/1.1 Persistent Socket (Keep-Alive) ke Supabase REST / Edge Functions (mencegah socket TIME_WAIT exhaustion).
 - Database & Frontend: PostgreSQL Supabase Realtime WebSockets, Netlify React/Vite Dashboard.
 
@@ -303,10 +277,9 @@ SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
 - Perangkat ID: ${telemetryContext.deviceId || 'ESP32_AC_01'}
 - Status Konektivitas: ${telemetryContext.isOnline ? 'ONLINE' : 'OFFLINE'}
 - Tegangan AC True-RMS: ${telemetryContext.voltage ? Number(telemetryContext.voltage).toFixed(1) : 0} Volt RMS (Offset Kalibrasi Aktif: ${telemetryContext.settings?.voltageTrimOffset || 0}V, Normal SPLN: 198V - 242V)
-- Estimasi Kecepatan Kompresor: ${telemetryContext.rpm ? Number(telemetryContext.rpm).toLocaleString('id-ID') : 0} RPM (Status: ${telemetryContext.isRunning ? 'RUNNING' : 'OFF'}, Kutub: ${telemetryContext.motorPoles || 4}-Pole, Mult: ${telemetryContext.settings?.rpmMultiplier || 1.0})
-- Suhu Evaporator / Ruangan: ${telemetryContext.temperature ? Number(telemetryContext.temperature).toFixed(1) : 0} °C (Offset Kalibrasi Aktif: ${telemetryContext.settings?.tempTrimOffset || 0}°C)
+- Suhu Udara AC: ${telemetryContext.temperature ? Number(telemetryContext.temperature).toFixed(1) : 0} °C (Offset Kalibrasi Aktif: ${telemetryContext.settings?.tempTrimOffset || 0}°C)
 - Kelembapan Relatif: ${telemetryContext.humidity ? Number(telemetryContext.humidity).toFixed(1) : 0} %RH (Offset Kalibrasi Aktif: ${telemetryContext.settings?.humidityTrimOffset || 0}%RH)
-- Profil Kompresor Inverter: ${telemetryContext.profileName || 'Universal Inverter'}
+- Titik Embun (Dew Point): ${telemetryContext.dewPoint !== null && telemetryContext.dewPoint !== undefined ? Number(telemetryContext.dewPoint).toFixed(1) : '--'} °C
 - Ambang Batas Tegangan: Low=${telemetryContext.settings?.voltageLow || 198}V, High=${telemetryContext.settings?.voltageHigh || 242}V
 `;
   }

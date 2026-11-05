@@ -1,28 +1,22 @@
 // ============================================================================
-// ANALYSIS PAGE (ANALISIS KONDISI AC, JALA LISTRIK & INVERTER COMPRESSOR)
-// Modul evaluasi komprehensif profil kompresor, tegangan listrik, beban termal,
-// dan deteksi anomali. Dilengkapi disclaimer keselamatan teknis pendingin udara.
+// ANALYSIS PAGE (ANALISIS KONDISI KELISTRIKAN & IKLIM TERMAL AC)
+// Modul evaluasi komprehensif stabilitas tegangan jala-jala PLN 220V,
+// beban termal ruangan, titik embun (dew point), dan deteksi transien anomali.
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
 import { 
-  LineChart, 
   Zap, 
   Thermometer, 
   Droplets, 
   AlertTriangle, 
-  HelpCircle, 
-  CheckCircle, 
-  TrendingUp, 
-  TrendingDown, 
+  ShieldCheck, 
+  Activity, 
   Gauge,
-  Info
+  Wind
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateStatistics, calculateDewPoint } from '../utils/analytics';
-import CompressorRpmSummary from '../components/CompressorRpmSummary';
-import CompressorSpeedAnalysis from '../components/CompressorSpeedAnalysis';
-import CompressorBehaviorAnalysis from '../components/CompressorBehaviorAnalysis';
 
 export default function AnalysisPage() {
   const { realtimeBuffer, settings, selectedDeviceId } = useApp();
@@ -50,30 +44,15 @@ export default function AnalysisPage() {
   return (
     <div className="space-y-6">
       
-      {/* 1. PROFIL & KONTROL DETAIL KOMPRESOR INVERTER */}
-      <section aria-label="Ringkasan RPM & Profil Compressor">
-        <CompressorRpmSummary />
-      </section>
-
-      {/* 2. DISTRIBUSI KECEPATAN COMPRESSOR (LOW / MEDIUM / HIGH) */}
-      <section aria-label="Distribusi Kecepatan Compressor">
-        <CompressorSpeedAnalysis />
-      </section>
-
-      {/* 3. ANALISIS PERILAKU COMPRESSOR (KESIMPULAN NARATIF OTOMATIS) */}
-      <section aria-label="Analisis Perilaku Compressor">
-        <CompressorBehaviorAnalysis />
-      </section>
-
-      {/* 5. HEADER ANALISIS KELISTRIKAN & PEMILIH SAMPEL */}
-      <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* 1. HEADER ANALISIS KELISTRIKAN & PEMILIH JENDELA SAMPEL */}
+      <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
         <div>
           <h2 className="text-base font-bold text-white flex items-center">
             <Gauge className="w-5 h-5 mr-2 text-electric-amber" />
             Laporan Kinerja Kelistrikan & Kondisi Termal
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Perangkat target: <code className="text-electric-orange font-bold">{selectedDeviceId}</code> | Sampel: {stats.count} titik telemetri
+            Perangkat target: <code className="text-electric-amber font-bold">{selectedDeviceId}</code> | Sampel: {stats.count} titik telemetri
           </p>
         </div>
 
@@ -82,7 +61,7 @@ export default function AnalysisPage() {
           <select
             value={sampleRange}
             onChange={(e) => setSampleRange(e.target.value)}
-            className="bg-industrial-950 border border-industrial-800 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-electric-orange"
+            className="bg-industrial-950 border border-industrial-800 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-electric-amber"
           >
             <option value="100">100 Sampel Terakhir (~1.5 Menit)</option>
             <option value="300">300 Sampel Terakhir (~5 Menit)</option>
@@ -92,7 +71,7 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      {/* 6. GRID INDIKATOR KELENGKAPAN ANALISIS KELISTRIKAN & TERMAL */}
+      {/* 2. GRID 3 KARTU KELOMPOK INDIKATOR ANALISIS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         
         {/* KELOMPOK 1: KESEHATAN TEGANGAN LISTRIK JALA-JALA PLN */}
@@ -122,7 +101,7 @@ export default function AnalysisPage() {
             </div>
             <div className="flex justify-between items-center py-1 border-b border-industrial-850">
               <span className="text-slate-400">Tegangan Tertinggi (V_max):</span>
-              <span className="font-bold text-electric-orange">{stats.voltage.max} VAC</span>
+              <span className="font-bold text-electric-amber">{stats.voltage.max} VAC</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-industrial-850">
               <span className="text-slate-400">Standar Deviasi (Fluktuasi):</span>
@@ -143,11 +122,11 @@ export default function AnalysisPage() {
           </div>
 
           <div className="p-3 bg-industrial-950 rounded-lg border border-industrial-800 text-[11px] text-slate-400">
-            <strong>Catatan Kelistrikan:</strong> Tegangan di bawah {settings.voltageLow}V saat kompresor start dapat memicu proteksi thermal overload atau kerusakan winding motor AC.
+            <strong>Catatan Kelistrikan:</strong> Tegangan di bawah {settings.voltageLow}V dapat memicu panas berlebih pada komponen sistem pendingin udara.
           </div>
         </div>
 
-        {/* KELOMPOK 2: KINERJA PENDINGINAN & TERMAL */}
+        {/* KELOMPOK 2: DINAMIKA TERMAL RUANGAN */}
         <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg space-y-4">
           <div className="flex items-center justify-between border-b border-industrial-800 pb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center">
@@ -191,16 +170,16 @@ export default function AnalysisPage() {
           </div>
 
           <div className="p-3 bg-industrial-950 rounded-lg border border-industrial-800 text-[11px] text-slate-400">
-            <strong>Kondensasi Air:</strong> Jika permukaan evaporator atau ducting berada di bawah titik embun ({latestDewPoint || 18}°C), tetesan embun/kondensasi air akan terjadi secara alami.
+            <strong>Kondensasi Udara:</strong> Jika permukaan evaporator atau ducting berada di bawah titik embun ({latestDewPoint || 18}°C), tetesan embun/kondensasi air akan terbentuk.
           </div>
         </div>
 
-        {/* KELOMPOK 3: KELEMBAPAN & KELEMBUTAN SENSOR */}
+        {/* KELOMPOK 3: KELEMBAPAN & INTEGRITAS SENSOR */}
         <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg space-y-4">
           <div className="flex items-center justify-between border-b border-industrial-800 pb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center">
               <Droplets className="w-4 h-4 mr-1.5 text-electric-cyan" />
-              Kelembapan & Integritas Data
+              Kelembapan & Integritas Sensor
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-industrial-950 text-slate-300 border border-industrial-800">
               SHT31 OK
@@ -225,22 +204,24 @@ export default function AnalysisPage() {
               <span className="font-bold text-slate-200">{stats.significantEvents.length} kejadian</span>
             </div>
             <div className="flex justify-between items-center py-1">
-              <span className="text-slate-400">Status Kalibrasi Hardware:</span>
-              <span className="font-bold text-amber-400">Wajib Kalibrasi True-RMS</span>
+              <span className="text-slate-400">Trim Offset Kalibrasi:</span>
+              <span className="font-bold text-slate-300">
+                V: {settings.voltageTrimOffset || 0}V | T: {settings.tempTrimOffset || 0}°C
+              </span>
             </div>
           </div>
 
           <div className="p-3 bg-industrial-950 rounded-lg border border-industrial-800 text-[11px] text-slate-400">
-            <strong>Kenyamanan Termal ASHRAE:</strong> Rentang kelembapan ruangan ber-AC ideal berada di antara 40% – 60% RH untuk mencegah jamur dan iritasi saluran pernapasan.
+            <strong>Kenyamanan Termal ASHRAE:</strong> Rentang kelembapan ruangan ber-AC ideal berada di antara 40% – 60% RH untuk mencegah pertumbuhan jamur dan iritasi saluran pernapasan.
           </div>
         </div>
 
       </div>
 
-      {/* 7. RIWAYAT PERISTIWA FLUKTUASI TAJAM */}
+      {/* 3. RIWAYAT PERISTIWA FLUKTUASI TAJAM */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200 mb-3 flex items-center">
-          <AlertTriangle className="w-4 h-4 mr-2 text-electric-orange" />
+          <AlertTriangle className="w-4 h-4 mr-2 text-electric-amber" />
           Log Transien & Kejadian Fluktuasi Tegangan / Suhu
         </h3>
 

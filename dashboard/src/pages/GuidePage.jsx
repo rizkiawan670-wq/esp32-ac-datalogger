@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export default function GuidePage() {
-  const [activeTab, setActiveTab] = useState('safety'); // 'safety' | 'wiring' | 'calibration' | 'deployment' | 'rpm'
+  const [activeTab, setActiveTab] = useState('safety'); // 'safety' | 'wiring' | 'calibration' | 'deployment'
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -31,7 +31,7 @@ export default function GuidePage() {
             Panduan Komprehensif Teknisi Lapangan
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Standar keselamatan listrik PLN 220V, diagram pengkabelan ESP32, tata cara kalibrasi True-RMS & Compressor RPM, dan deployment.
+            Standar keselamatan listrik PLN 220V, diagram pengkabelan ESP32, tata cara kalibrasi True-RMS & SHT31, dan deployment.
           </p>
         </div>
 
@@ -40,9 +40,8 @@ export default function GuidePage() {
           {[
             { id: 'safety', label: '1. Keselamatan PLN' },
             { id: 'wiring', label: '2. Wiring AC' },
-            { id: 'rpm', label: '3. Sensing RPM Kompresor' },
-            { id: 'calibration', label: '4. Kalibrasi True-RMS' },
-            { id: 'deployment', label: '5. Deployment' },
+            { id: 'calibration', label: '3. Kalibrasi True-RMS' },
+            { id: 'deployment', label: '4. Deployment' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -240,71 +239,7 @@ export default function GuidePage() {
         </div>
       )}
 
-      {/* TAB: SENSING RPM KOMPRESOR INVERTER (ISOLATED OPTOCOUPLER) */}
-      {activeTab === 'rpm' && (
-        <div className="space-y-5">
-          <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/50 text-amber-200 text-xs shadow-md">
-            <div className="flex items-start space-x-3">
-              <ShieldAlert className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="space-y-1.5">
-                <h3 className="font-bold text-sm text-amber-300 font-mono uppercase">
-                  ISOLASI TEGANGAN TINGGI INVERTER (300V-400V DC BUS)
-                </h3>
-                <p className="text-slate-200 leading-relaxed">
-                  Kabel fasa kompresor (U, V, W) mengandung tegangan DC Bus tinggi dengan modulasi PWM frekuensi tinggi (2-15 kHz).
-                  Wajib menggunakan isolated sensing front-end + optocoupler tegangan tinggi (misal PC817 / 6N137 dengan resistor HV seri). 
-                  <strong> DILARANG KERAS</strong> menghubungkan kabel fasa inverter kompresor langsung ke pin GPIO ESP32!
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg space-y-4">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center">
-              <Zap className="w-4 h-4 mr-2 text-electric-orange" />
-              Arsitektur Sensing & Integrasi Dashboard Utama
-            </h3>
-
-            <div className="p-4 bg-industrial-950 rounded-xl border border-industrial-800 font-mono text-xs text-slate-300">
-              <div className="text-electric-orange font-bold mb-2">ALUR KERJA SENSOR OPTOCOUPLER 1-KANAL:</div>
-              <pre className="text-[11px] leading-relaxed text-slate-400 overflow-x-auto">
-{`[ Kabel Fasa Kompresor (U/V/W) ] 
-               │
-               ▼
-[ Resistor HV Seri (200k-470kΩ) + Low-Pass Filter RC + TVS ] (Redam carrier PWM)
-               │
-               ▼
-[ Optocoupler Isolasi Galvanik 3750V (PC817 / 6N137) ]
-               │
-               ▼
-[ Pin GPIO33 ESP32 ] (Input Pulsa Digital Bersih)
-               │
-               ▼
-[ Hitung Frekuensi Fundamental & Rumus RPM: (f * 120) / Poles ]
-               │
-               ▼
-[ Dashboard Utama: Terintegrasi Langsung pada Satu Halaman ]`}
-              </pre>
-            </div>
-
-            <div className="p-4 bg-industrial-950 rounded-lg border border-industrial-800 space-y-2 text-xs">
-              <h4 className="font-mono font-bold text-electric-orange text-sm">
-                Prosedur Kalibrasi Kompresor Langsung di Dashboard:
-              </h4>
-              <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
-                <li>Buka <strong>Dashboard utama</strong> Universal Inverter Analyzer.</li>
-                <li>Pada kartu <strong>Ringkasan Kondisi Compressor</strong>, klik tombol <strong>Profil: [Merek]</strong>.</li>
-                <li>Pilih preset kompresor yang sesuai (Daikin FTKQ, Sharp J-Tech, Panasonic si-BiRU, LG DualCool, Samsung WindFree, atau Universal).</li>
-                <li>Pilih kabel fasa sensor yang terpasang (Fasa U, V, atau W).</li>
-                <li>Verifikasi rasio pole motor (umumnya 4-pole untuk Daikin/Sharp/Panasonic, 6-pole untuk LG DualCool, 8-pole untuk Samsung).</li>
-                <li>Centang <strong>Tandai Terkalibrasi (CALIBRATED)</strong>, lalu klik <strong>Terapkan Kalibrasi</strong>.</li>
-              </ol>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: PROSEDUR KALIBRASI TRUE-RMS */}
+      {/* TAB 3: PROSEDUR KALIBRASI TRUE-RMS */}
       {activeTab === 'calibration' && (
         <div className="space-y-5">
           <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-5 shadow-lg space-y-4">

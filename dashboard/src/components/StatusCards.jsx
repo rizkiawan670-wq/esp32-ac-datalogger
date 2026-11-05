@@ -1,7 +1,10 @@
 // ============================================================================
 // STATUS CARDS COMPONENT
-// Menampilkan kartu metrik utama: Tegangan AC RMS, Suhu, Kelembapan,
-// Status Kalibrasi, dan Titik Embun (Dew Point) dengan indikator visual.
+// Menampilkan kartu metrik utama sistem telemetri AC:
+// 1. Tegangan AC RMS (True-RMS ZMPT101B)
+// 2. Suhu Udara AC (°C, Sensirion SHT31)
+// 3. Kelembapan Relatif (%RH, Sensirion SHT31)
+// 4. Titik Embun / Dew Point (°C, Ambang Kondensasi Termal)
 // ============================================================================
 
 import React from 'react';
@@ -10,12 +13,9 @@ import {
   Thermometer, 
   Droplets, 
   ShieldCheck, 
-  Clock, 
   Wind,
-  Gauge,
   Activity,
-  TrendingUp,
-  TrendingDown
+  AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateDewPoint } from '../utils/analytics';
@@ -23,42 +23,26 @@ import { calculateDewPoint } from '../utils/analytics';
 export default function StatusCards() {
   const { 
     latestReading, 
-    latestRpmReading,
-    activeCompressorProfile,
     settings, 
-    devices, 
-    selectedDeviceId, 
     isDeviceOnline 
   } = useApp();
 
-  // Tegangan selalu dianggap valid (kalibrasi dilakukan di firmware)
-  const isVoltageValid = true;
-
-  // Ekstrak data pembacaan AC
-  const voltage = latestReading?.voltage_v !== undefined ? Number(latestReading.voltage_v) : null;
-  const temperature = latestReading?.temperature_c !== undefined ? Number(latestReading.temperature_c) : null;
-  const humidity = latestReading?.humidity_rh !== undefined ? Number(latestReading.humidity_rh) : null;
+  // Ekstrak data pembacaan telemetri AC
+  const voltage = latestReading?.voltage_v !== undefined && latestReading?.voltage_v !== null 
+    ? Number(latestReading.voltage_v) 
+    : (latestReading?.voltage_rms !== undefined && latestReading?.voltage_rms !== null ? Number(latestReading.voltage_rms) : null);
+    
+  const temperature = latestReading?.temperature_c !== undefined && latestReading?.temperature_c !== null 
+    ? Number(latestReading.temperature_c) 
+    : null;
+    
+  const humidity = latestReading?.humidity_rh !== undefined && latestReading?.humidity_rh !== null 
+    ? Number(latestReading.humidity_rh) 
+    : null;
+    
   const dewPoint = calculateDewPoint(temperature, humidity);
 
-  // Ekstrak data RPM Kompresor (Estimated RPM)
-  const rawRpm = latestRpmReading?.estimated_rpm !== undefined ? Number(latestRpmReading.estimated_rpm) : 0;
-  const isSignalBroken = latestRpmReading?.signal_status === 'NO_SIGNAL' || latestRpmReading?.signal_status === 'UNSTABLE';
-  const currentRpm = isSignalBroken ? 0 : Math.max(0, Math.round(rawRpm));
-
-  const compressorStatus = latestRpmReading?.compressor_status || (currentRpm >= 400 ? 'RUNNING' : 'OFF');
-  const rpmTrend = latestRpmReading?.speed_trend || (currentRpm === 0 ? 'STOPPED' : 'STABLE');
-
-  const lowMax = activeCompressorProfile?.rpm_low_max || 1800;
-  const medMax = activeCompressorProfile?.rpm_medium_max || 3200;
-
-  let rpmCategory = 'OFF';
-  if (currentRpm >= 400 && compressorStatus !== 'OFF') {
-    if (currentRpm <= lowMax) rpmCategory = 'LOW';
-    else if (currentRpm <= medMax) rpmCategory = 'MEDIUM';
-    else rpmCategory = 'HIGH';
-  }
-
-  // Status evaluasi tegangan
+  // Status evaluasi tegangan (Standar PLN 220V ±10%: 198V - 242V)
   let voltageStatus = {
     label: 'Menunggu Data',
     color: 'text-slate-400',
@@ -98,7 +82,7 @@ export default function StatusCards() {
     }
   }
 
-  // Evaluasi Suhu
+  // Evaluasi Suhu Udara
   let tempStatus = 'Normal';
   let tempColor = 'text-emerald-400';
   if (temperature !== null) {
@@ -114,30 +98,48 @@ export default function StatusCards() {
     }
   }
 
-  // Evaluasi Kelembapan
+  // Evaluasi Kelembapan Relatif
   let humStatus = 'Optimal';
   let humColor = 'text-cyan-400';
   if (humidity !== null) {
     if (humidity < settings.humidityLow) {
-      humStatus = 'Udara Kering (<30%)';
+      humStatus = `Udara Kering (<${settings.humidityLow}%)`;
       humColor = 'text-amber-400';
     } else if (humidity > settings.humidityHigh) {
-      humStatus = 'Kelembapan Tinggi (>75%)';
+      humStatus = `Kelembapan Tinggi (>${settings.humidityHigh}%)`;
       humColor = 'text-rose-400';
     } else {
-      humStatus = 'Rentang Sehat (30-70%)';
+      humStatus = 'Rentang Sehat (40-60%)';
       humColor = 'text-emerald-400';
     }
   }
 
-  // Format waktu pengukuran
-  const measuredTimeStr = latestReading?.measured_at
-    ? new Date(latestReading.measured_at).toLocaleTimeString('id-ID', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      })
-    : '--:--:--';
+  // Evaluasi Titik Embun & Kondensasi
+  const tempDelta = (temperature !== null && dewPoint !== null) ? (temperature - dewPoint) : null;
+  let dewStatus = {
+    label: 'Normal',
+    color: 'text-cyan-400',
+    bgColor: 'bg-cyan-950/20',
+    borderColor: 'border-cyan-800/40'
+  };
+
+  if (tempDelta !== null) {
+    if (tempDelta <= 2.0) {
+      dewStatus = {
+        label: 'Waspada Kondensasi',
+        color: 'text-amber-400',
+        bgColor: 'bg-amber-950/40',
+        borderColor: 'border-amber-600/50'
+      };
+    } else {
+      dewStatus = {
+        label: 'Bebas Kondensasi',
+        color: 'text-emerald-400',
+        bgColor: 'bg-emerald-950/20',
+        borderColor: 'border-emerald-600/30'
+      };
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -236,57 +238,40 @@ export default function StatusCards() {
         </div>
 
         <div className="mt-3 pt-2 border-t border-industrial-800 text-[11px] text-slate-400 flex justify-between items-center">
-          <span>Titik Embun (Dew Point):</span>
-          <span className="font-mono font-semibold text-cyan-300">
-            {dewPoint !== null ? `${dewPoint.toFixed(1)} °C` : '--'}
-          </span>
+          <span>Rentang ASHRAE:</span>
+          <span className="font-mono text-slate-300">40% – 60% RH</span>
         </div>
       </div>
 
-      {/* 4. KARTU ESTIMATED RPM KOMPRESOR (DI SAMPING KELEMBAPAN RELATIF) */}
-      <div className="p-4 rounded-xl border border-industrial-800 bg-industrial-900 relative overflow-hidden shadow-md">
+      {/* 4. KARTU TITIK EMBUN (DEW POINT) & INDEKS KONDENSASI */}
+      <div className={`p-4 rounded-xl border bg-industrial-900 ${dewStatus.borderColor} relative overflow-hidden shadow-md`}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center">
-            <Gauge className="w-4 h-4 mr-1.5 text-electric-orange" />
-            Estimated RPM
+            <Wind className="w-4 h-4 mr-1.5 text-cyan-400" />
+            Titik Embun (Dew Point)
           </span>
-          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold ${
-            rpmCategory === 'HIGH'
-              ? 'bg-rose-950/50 border-rose-600/60 text-rose-300'
-              : rpmCategory === 'MEDIUM'
-              ? 'bg-amber-950/50 border-amber-600/60 text-amber-300'
-              : rpmCategory === 'LOW'
-              ? 'bg-cyan-950/50 border-cyan-600/60 text-cyan-300'
-              : 'bg-industrial-950 border-industrial-800 text-slate-400'
-          }`}>
-            {rpmCategory === 'HIGH' ? 'HIGH (Ngebut)' : rpmCategory}
+          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold ${dewStatus.bgColor} ${dewStatus.color} ${dewStatus.borderColor}`}>
+            {dewStatus.label}
           </span>
         </div>
 
-        <div className="mt-2 flex items-baseline justify-between">
-          <div className="flex items-baseline space-x-1">
-            <span className="text-4xl font-black font-mono text-white tracking-tight">
-              {currentRpm.toLocaleString('id-ID')}
-            </span>
-            <span className="text-lg font-semibold text-slate-400 font-mono">RPM</span>
-          </div>
-
-          <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded border ${
-            compressorStatus === 'RUNNING'
-              ? 'bg-emerald-950/60 text-emerald-400 border-emerald-700/50'
-              : 'bg-slate-900 text-slate-400 border-slate-750'
-          }`}>
-            {compressorStatus}
-          </span>
+        <div className="mt-2 flex items-baseline space-x-1">
+          {dewPoint !== null ? (
+            <>
+              <span className="text-4xl font-black font-mono text-white tracking-tight">
+                {dewPoint.toFixed(1)}
+              </span>
+              <span className="text-lg font-semibold text-slate-400 font-mono">°C</span>
+            </>
+          ) : (
+            <span className="text-3xl font-mono text-slate-500">--.-</span>
+          )}
         </div>
 
         <div className="mt-3 pt-2 border-t border-industrial-800 text-[11px] text-slate-400 flex justify-between items-center">
-          <span className="flex items-center">
-            <Activity className="w-3 h-3 mr-1 text-slate-500" />
-            Tren: <strong className="ml-1 text-slate-300">{rpmTrend}</strong>
-          </span>
-          <span className="font-mono text-slate-400">
-            Fasa {activeCompressorProfile?.sensor_channel || 'U'}
+          <span>Ambang T - Tdp:</span>
+          <span className="font-mono text-slate-300">
+            {tempDelta !== null ? `Δ ${tempDelta.toFixed(1)} °C` : '--'}
           </span>
         </div>
       </div>

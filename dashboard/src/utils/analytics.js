@@ -1,8 +1,7 @@
 // ============================================================================
 // AC PERFORMANCE & ELECTRICAL ANALYTICS UTILITY
 // Menyediakan kalkulasi statistik, deteksi anomali jala-jala listrik PLN,
-// indikator termal, perhitungan titik embun (dew point),
-// dan analisis perilaku kecepatan motor kompresor (COMPRESSOR RPM ANALYTICS).
+// indikator termal, dan perhitungan titik embun (dew point).
 // ============================================================================
 
 /**
@@ -25,6 +24,7 @@ export function calculateStatistics(readings, lowThreshold = 198.0, highThreshol
   if (!readings || readings.length === 0) {
     return {
       count: 0,
+      validVCount: 0,
       voltage: { min: 0, max: 0, avg: 0, stdDev: 0, sags: 0, swells: 0, stabilityIndex: 100 },
       temperature: { min: 0, max: 0, avg: 0, delta: 0 },
       humidity: { min: 0, max: 0, avg: 0 },
@@ -43,12 +43,12 @@ export function calculateStatistics(readings, lowThreshold = 198.0, highThreshol
 
   for (let i = 0; i < readings.length; i++) {
     const r = readings[i];
-    const v = Number(r.voltage_v);
-    const t = Number(r.temperature_c);
-    const h = Number(r.humidity_rh);
+    const v = r.voltage_v !== null && r.voltage_v !== undefined ? Number(r.voltage_v) : (r.voltage_rms !== null && r.voltage_rms !== undefined ? Number(r.voltage_rms) : null);
+    const t = r.temperature_c !== null && r.temperature_c !== undefined ? Number(r.temperature_c) : null;
+    const h = r.humidity_rh !== null && r.humidity_rh !== undefined ? Number(r.humidity_rh) : null;
 
-    // Statistik Tegangan (hanya yang bertanda valid)
-    if (r.voltage_valid && !isNaN(v) && v > 0) {
+    // Statistik Tegangan
+    if (v !== null && !isNaN(v) && v > 10) {
       sumV += v;
       if (v < minV) minV = v;
       if (v > maxV) maxV = v;
@@ -62,14 +62,14 @@ export function calculateStatistics(readings, lowThreshold = 198.0, highThreshol
     }
 
     // Statistik Suhu
-    if (!isNaN(t)) {
+    if (t !== null && !isNaN(t)) {
       sumT += t;
       if (t < minT) minT = t;
       if (t > maxT) maxT = t;
     }
 
     // Statistik Kelembapan
-    if (!isNaN(h)) {
+    if (h !== null && !isNaN(h)) {
       sumH += h;
       if (h < minH) minH = h;
       if (h > maxH) maxH = h;
@@ -101,26 +101,34 @@ export function calculateStatistics(readings, lowThreshold = 198.0, highThreshol
     const curr = readings[i];
     const prev = readings[i - 1];
 
-    if (curr.voltage_valid && prev.voltage_valid) {
-      const deltaV = Math.abs(Number(curr.voltage_v) - Number(prev.voltage_v));
+    const curV = curr.voltage_v !== null && curr.voltage_v !== undefined ? Number(curr.voltage_v) : Number(curr.voltage_rms || 0);
+    const preV = prev.voltage_v !== null && prev.voltage_v !== undefined ? Number(prev.voltage_v) : Number(prev.voltage_rms || 0);
+
+    if (curV > 10 && preV > 10) {
+      const deltaV = Math.abs(curV - preV);
       if (deltaV >= 8.0) { // Perubahan >= 8V dalam 1 interval
         significantEvents.push({
-          time: curr.measured_at,
+          time: curr.measured_at || curr.created_at,
           type: 'VOLTAGE_FLUCTUATION',
-          description: `Perubahan tegangan tajam: ${Number(prev.voltage_v).toFixed(1)}V → ${Number(curr.voltage_v).toFixed(1)}V (Δ${deltaV.toFixed(1)}V)`,
+          description: `Perubahan tegangan tajam: ${preV.toFixed(1)}V → ${curV.toFixed(1)}V (Δ${deltaV.toFixed(1)}V)`,
           severity: deltaV >= 15 ? 'CRITICAL' : 'WARNING'
         });
       }
     }
 
-    const deltaT = Math.abs(Number(curr.temperature_c) - Number(prev.temperature_c));
-    if (deltaT >= 1.5) { // Perubahan suhu >= 1.5°C mendadak
-      significantEvents.push({
-        time: curr.measured_at,
-        type: 'TEMP_SURGE',
-        description: `Perubahan suhu signifikan: ${Number(prev.temperature_c).toFixed(1)}°C → ${Number(curr.temperature_c).toFixed(1)}°C`,
-        severity: 'INFO'
-      });
+    const curT = curr.temperature_c !== null && curr.temperature_c !== undefined ? Number(curr.temperature_c) : null;
+    const preT = prev.temperature_c !== null && prev.temperature_c !== undefined ? Number(prev.temperature_c) : null;
+
+    if (curT !== null && preT !== null) {
+      const deltaT = Math.abs(curT - preT);
+      if (deltaT >= 1.5) { // Perubahan suhu >= 1.5°C mendadak
+        significantEvents.push({
+          time: curr.measured_at || curr.created_at,
+          type: 'TEMP_SURGE',
+          description: `Perubahan suhu signifikan: ${preT.toFixed(1)}°C → ${curT.toFixed(1)}°C`,
+          severity: 'INFO'
+        });
+      }
     }
   }
 
@@ -163,271 +171,4 @@ export function formatSecondsToTime(seconds) {
   if (h > 0) return `${h}j ${m}m ${s}s`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s} dtk`;
-}
-
-/**
- * Analisis komprehensif perilaku kecepatan compressor (Section 3C & 3D)
- * Menghitung durasi LOW/MEDIUM/HIGH, persentase, min/max/avg RPM,
- * mendeteksi pola perubahan kecepatan, serta menghasilkan narasi teknisi otomatis.
- *
- * @param {Array} dataList - List data RPM terurut kronologis
- * @param {Object} profile - Profil kalibrasi kompresor aktif (rpm_low_max, rpm_medium_max, rpm_high_min)
- */
-export function calculateCompressorAnalytics(dataList, profile) {
-  const lowMax = profile?.rpm_low_max || 1800;
-  const medMax = profile?.rpm_medium_max || 3200;
-  const highMin = profile?.rpm_high_min || 3200;
-
-  if (!dataList || dataList.length === 0) {
-    return {
-      isSufficient: false,
-      totalSeconds: 0,
-      activeSeconds: 0,
-      offSeconds: 0,
-      lowSeconds: 0,
-      medSeconds: 0,
-      highSeconds: 0,
-      lowPct: 0,
-      medPct: 0,
-      highPct: 0,
-      minRpm: 0,
-      maxRpm: 0,
-      avgRpm: 0,
-      accelCount: 0,
-      decelCount: 0,
-      startStopCycles: 0,
-      stabilityScore: 'STABIL',
-      narrative: 'Data telemetri belum mencukupi untuk membuat kesimpulan analisis perilaku kompresor. Menunggu data pengukuran operasional.',
-      behaviorFlags: {
-        isAccelerating: false,
-        reachedHigh: false,
-        sustainingHigh: false,
-        isDecelerating: false,
-        isHunting: false,
-        isStopped: true,
-      },
-      markers: []
-    };
-  }
-
-  let offSec = 0;
-  let lowSec = 0;
-  let medSec = 0;
-  let highSec = 0;
-  let sumRpm = 0;
-  let activeCount = 0;
-  let minRpm = Infinity;
-  let maxRpm = 0;
-  let accelCount = 0;
-  let decelCount = 0;
-  let cycles = 0;
-  let prevRpm = 0;
-  let prevCategory = 'OFF';
-
-  // State sequence untuk narasi otomatis
-  const phaseDurations = [];
-  let currentPhase = null;
-
-  // Markers untuk grafik (waktu mulai ngebut, melambat, berhenti)
-  const markers = [];
-
-  dataList.forEach((pt, idx) => {
-    const rpm = Number(pt.estimated_rpm !== undefined ? pt.estimated_rpm : pt.rpm) || 0;
-    const trend = pt.speed_trend || pt.trend || (rpm === 0 ? 'STOPPED' : 'STABLE');
-    const timeLabel = pt.time || (pt.recorded_at ? new Date(pt.recorded_at).toLocaleTimeString('id-ID') : `T-${idx}`);
-
-    // Kategorisasi berdasarkan batas kalibrasi profil
-    let cat = 'OFF';
-    if (rpm < 400) {
-      cat = 'OFF';
-      offSec++;
-    } else {
-      activeCount++;
-      sumRpm += rpm;
-      if (rpm < minRpm) minRpm = rpm;
-      if (rpm > maxRpm) maxRpm = rpm;
-
-      if (rpm <= lowMax) {
-        cat = 'LOW';
-        lowSec++;
-      } else if (rpm <= medMax) {
-        cat = 'MEDIUM';
-        medSec++;
-      } else {
-        cat = 'HIGH';
-        highSec++;
-      }
-    }
-
-    if (trend === 'ACCELERATING') accelCount++;
-    if (trend === 'DECELERATING') decelCount++;
-
-    // Deteksi siklus start-stop
-    if (cat !== 'OFF' && prevCategory === 'OFF' && idx > 0) {
-      cycles++;
-    }
-
-    // Deteksi marker kejadian (mulai ngebut, melambat, berhenti)
-    if (idx > 0) {
-      if (prevCategory !== 'HIGH' && cat === 'HIGH') {
-        markers.push({
-          type: 'HIGH_REACHED',
-          label: 'Mulai Ngebut (HIGH)',
-          time: timeLabel,
-          rpm,
-          color: '#ef4444'
-        });
-      } else if (prevRpm > medMax && rpm <= medMax && trend === 'DECELERATING') {
-        markers.push({
-          type: 'DECEL_START',
-          label: 'Melambat (Deselerasi)',
-          time: timeLabel,
-          rpm,
-          color: '#06b6d4'
-        });
-      } else if (prevRpm >= 400 && rpm < 400) {
-        markers.push({
-          type: 'STOPPED',
-          label: 'Kompresor Berhenti',
-          time: timeLabel,
-          rpm,
-          color: '#94a3b8'
-        });
-      }
-    }
-
-    // Pelacakan urutan fase operasional
-    if (!currentPhase || currentPhase.category !== cat) {
-      if (currentPhase) {
-        phaseDurations.push({ ...currentPhase });
-      }
-      currentPhase = {
-        category: cat,
-        seconds: 1,
-        avgRpm: rpm,
-        startRpm: rpm,
-        endRpm: rpm
-      };
-    } else {
-      currentPhase.seconds += 1;
-      currentPhase.avgRpm = (currentPhase.avgRpm * (currentPhase.seconds - 1) + rpm) / currentPhase.seconds;
-      currentPhase.endRpm = rpm;
-    }
-
-    prevRpm = rpm;
-    prevCategory = cat;
-  });
-
-  if (currentPhase) {
-    phaseDurations.push(currentPhase);
-  }
-
-  const totalSec = dataList.length;
-  const avgRpm = activeCount > 0 ? Math.round(sumRpm / activeCount) : 0;
-  const finalMinRpm = minRpm === Infinity ? 0 : minRpm;
-
-  // Persentase durasi terhadap total waktu aktif
-  const lowPct = activeCount > 0 ? Math.round((lowSec / activeCount) * 100) : 0;
-  const medPct = activeCount > 0 ? Math.round((medSec / activeCount) * 100) : 0;
-  const highPct = activeCount > 0 ? Math.round((highSec / activeCount) * 100) : 0;
-
-  // Evaluasi stabilitas
-  let stability = 'STABIL';
-  const isHunting = (accelCount + decelCount) > (activeCount * 0.35) && activeCount >= 15;
-  if (isHunting) {
-    stability = 'PERUBAHAN BERULANG (HUNTING / FLUKTUATIF)';
-  } else if (cycles >= 4 && activeCount < 300) {
-    stability = 'SHORT CYCLING (SERING MATI-HIDUP)';
-  }
-
-  // Evaluasi perilaku compressor saat ini & historis
-  const latestPt = dataList[dataList.length - 1];
-  const latestRpm = Number(latestPt?.estimated_rpm !== undefined ? latestPt.estimated_rpm : latestPt?.rpm) || 0;
-  const latestTrend = latestPt?.speed_trend || latestPt?.trend || 'STOPPED';
-
-  const behaviorFlags = {
-    isAccelerating: latestTrend === 'ACCELERATING',
-    reachedHigh: latestRpm >= highMin || highSec > 0,
-    sustainingHigh: highSec >= 60, // Mempertahankan kecepatan tinggi minimal 1 menit
-    isDecelerating: latestTrend === 'DECELERATING',
-    isHunting,
-    isStopped: latestRpm < 400 || latestPt?.compressor_status === 'OFF',
-  };
-
-  // --------------------------------------------------------------------------
-  // GENERATOR RINGKASAN NARATIF OTOMATIS BERDASARKAN DATA SEBENARNYA
-  // --------------------------------------------------------------------------
-  const isSufficient = activeCount >= 10 || totalSec >= 20;
-  let narrative = '';
-
-  if (!isSufficient) {
-    narrative = 'Data telemetri belum mencukupi untuk membuat kesimpulan analisis perilaku kompresor. Diperlukan minimal observasi kompresor beroperasi beberapa menit.';
-  } else {
-    // Bangun narasi teknisi berdasarkan fase operasional
-    const sentences = [];
-
-    // 1. Ringkasan durasi awal dan kategori kerja
-    if (activeCount === 0) {
-      sentences.push(`Kompresor tercatat dalam kondisi mati (OFF) selama keseluruhan ${formatSecondsToTime(offSec)} pengamatan.`);
-    } else {
-      const activePhases = phaseDurations.filter(p => p.category !== 'OFF');
-      
-      if (activePhases.length === 1) {
-        const single = activePhases[0];
-        sentences.push(`Kompresor bekerja stabil pada kategori ${single.category} (~${Math.round(single.avgRpm)} RPM) selama ${formatSecondsToTime(single.seconds)} tanpa perubahan kecepatan signifikan.`);
-      } else {
-        // Ambil urutan penting
-        const prominentParts = [];
-        if (lowSec > 0) prominentParts.push(`kecepatan LOW selama ${formatSecondsToTime(lowSec)}`);
-        if (medSec > 0) prominentParts.push(`kecepatan MEDIUM selama ${formatSecondsToTime(medSec)}`);
-        if (highSec > 0) prominentParts.push(`kecepatan HIGH (ngebut) selama ${formatSecondsToTime(highSec)}`);
-
-        if (prominentParts.length > 0) {
-          sentences.push(`Kompresor beroperasi aktif dengan alokasi ${prominentParts.join(', kemudian dilanjutkan ')}.`);
-        }
-
-        // Analisis transisi kecepatan tinggi
-        if (highSec > 0 && lowSec > 0) {
-          sentences.push(`Terdeteksi proses peningkatan kecepatan bertahap dari putaran rendah hingga mencapai puncak ${maxRpm.toLocaleString('id-ID')} RPM (${highPct}% dari waktu aktif).`);
-        } else if (highSec > (activeCount * 0.6)) {
-          sentences.push(`Kompresor mempertahankan kecepatan tinggi (HIGH) secara dominan (${highPct}% durasi), mengindikasikan beban pendinginan berat atau permintaan kapasitas pendinginan maksimal.`);
-        }
-      }
-
-      // Deteksi fluktuasi atau hunting
-      if (isHunting) {
-        sentences.push(`Perhatian: Terdeteksi fluktuasi akselerasi-deselerasi berulang (${accelCount} akselerasi, ${decelCount} deselerasi), mengindikasikan modulasi beban dinamis atau sinyal inverter tidak konstan.`);
-      }
-
-      // Deteksi stop
-      if (offSec > 0 && behaviorFlags.isStopped) {
-        sentences.push(`Saat ini kompresor telah berhenti berputar (0 RPM / OFF).`);
-      }
-    }
-
-    narrative = sentences.join(' ');
-  }
-
-  return {
-    isSufficient,
-    totalSeconds: totalSec,
-    activeSeconds: activeCount,
-    offSeconds: offSec,
-    lowSeconds: lowSec,
-    medSeconds: medSec,
-    highSeconds: highSec,
-    lowPct,
-    medPct,
-    highPct,
-    minRpm: finalMinRpm,
-    maxRpm,
-    avgRpm,
-    accelCount,
-    decelCount,
-    startStopCycles: cycles,
-    stabilityScore: stability,
-    narrative,
-    behaviorFlags,
-    markers: markers.slice(-10) // 10 marker terakhir
-  };
 }

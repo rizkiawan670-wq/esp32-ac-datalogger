@@ -1,8 +1,8 @@
 // ============================================================================
 // APPLICATION STATE CONTEXT
 // Mengelola koneksi Supabase Realtime, buffer data grafik 1-detik,
-// status perangkat ESP32, generator simulasi, ambang batas AC,
-// dan pemantauan real-time COMPRESSOR RPM INVERTER.
+// status perangkat ESP32, generator simulasi, ambang batas kelistrikan AC,
+// dan sinkronisasi kalibrasi multi-device real-time.
 // ============================================================================
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -20,91 +20,8 @@ const DEFAULT_SETTINGS = {
   humidityLow: 30.0,
   humidityHigh: 75.0,
   humidityTrimOffset: 0.0, // Koreksi offset kalibrasi kelembaban (%RH)
-  rpmMultiplier: 1.0,  // Faktor pengali kalibrasi RPM kompresor
   bufferLimit: 180,    // 180 titik = 3 menit telemetri per detik untuk grafik live
 };
-
-// Preset Profil Kompresor Inverter Default
-export const DEFAULT_COMPRESSOR_PROFILES = [
-  {
-    id: 'universal',
-    brand: 'Universal',
-    model: 'Standard Inverter (Generic)',
-    motor_poles: 4,
-    pulses_per_revolution: 2.0,
-    rpm_low_max: 1800,
-    rpm_medium_max: 3200,
-    rpm_high_min: 3200,
-    sensor_channel: 'U',
-    is_calibrated: false,
-    notes: 'Profil universal konservatif untuk kompresor inverter umum (4-Pole BLDC)'
-  },
-  {
-    id: 'daikin_ftkq',
-    brand: 'Daikin',
-    model: 'Flash Inverter FTKQ (1 PK)',
-    motor_poles: 4,
-    pulses_per_revolution: 2.0,
-    rpm_low_max: 1750,
-    rpm_medium_max: 3100,
-    rpm_high_min: 3100,
-    sensor_channel: 'U',
-    is_calibrated: true,
-    notes: 'Kompresor hermetik Daikin Swing/Scroll Inverter'
-  },
-  {
-    id: 'sharp_jtech',
-    brand: 'Sharp',
-    model: 'J-Tech Inverter AH-X (1 PK)',
-    motor_poles: 4,
-    pulses_per_revolution: 2.0,
-    rpm_low_max: 1600,
-    rpm_medium_max: 3000,
-    rpm_high_min: 3000,
-    sensor_channel: 'U',
-    is_calibrated: true,
-    notes: 'Kompresor Sharp Eco Inverter dengan mode hemat energi'
-  },
-  {
-    id: 'panasonic_si_biru',
-    brand: 'Panasonic',
-    model: 'si-BiRU Inverter CS-PU (1 PK)',
-    motor_poles: 4,
-    pulses_per_revolution: 2.0,
-    rpm_low_max: 1800,
-    rpm_medium_max: 3300,
-    rpm_high_min: 3300,
-    sensor_channel: 'U',
-    is_calibrated: true,
-    notes: 'Kompresor Panasonic Rotary Inverter R32'
-  },
-  {
-    id: 'lg_dual_inverter',
-    brand: 'LG',
-    model: 'DualCool Dual Inverter (1 PK)',
-    motor_poles: 6,
-    pulses_per_revolution: 3.0,
-    rpm_low_max: 1900,
-    rpm_medium_max: 3400,
-    rpm_high_min: 3400,
-    sensor_channel: 'U',
-    is_calibrated: true,
-    notes: 'Kompresor LG Dual Rotary (Twin Rotary 6-Pole)'
-  },
-  {
-    id: 'samsung_windfree',
-    brand: 'Samsung',
-    model: 'WindFree Digital Inverter (1 PK)',
-    motor_poles: 8,
-    pulses_per_revolution: 4.0,
-    rpm_low_max: 1650,
-    rpm_medium_max: 3150,
-    rpm_high_min: 3150,
-    sensor_channel: 'U',
-    is_calibrated: true,
-    notes: 'Kompresor Samsung Digital Inverter 8-Pole Multi-Magnet'
-  }
-];
 
 export function AppProvider({ children }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState(() => {
@@ -134,24 +51,6 @@ export function AppProvider({ children }) {
   const [latestReading, setLatestReading] = useState(null);
   const [realtimeBuffer, setRealtimeBuffer] = useState([]);
 
-  // Telemetri COMPRESSOR RPM INVERTER
-  const [latestRpmReading, setLatestRpmReading] = useState(null);
-  const [rpmRealtimeBuffer, setRpmRealtimeBuffer] = useState([]);
-
-  // Profil Kompresor yang Aktif
-  const [activeCompressorProfile, setActiveCompressorProfile] = useState(() => {
-    const saved = localStorage.getItem('ac_datalogger_compressor_profile');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (_e) {}
-    }
-    return DEFAULT_COMPRESSOR_PROFILES[0]; // Default Universal
-  });
-
-  // Simulator RPM Mode: 'OFF' | 'LOW' | 'MEDIUM' | 'HIGH' | 'ACCEL' | 'DECEL' | 'UNSTABLE' | 'LOST'
-  const [rpmSimMode, setRpmSimMode] = useState('LOW');
-
   const [dbStatus, setDbStatus] = useState('connecting'); // 'connected' | 'disconnected' | 'unconfigured'
   const [isDeviceOnline, setIsDeviceOnline] = useState(false);
   const [secondsSinceLastPacket, setSecondsSinceLastPacket] = useState(null);
@@ -171,12 +70,10 @@ export function AppProvider({ children }) {
   });
 
   const realtimeChannelRef = useRef(null);
-  const rpmChannelRef = useRef(null);
   const syncChannelRef = useRef(null);
   const simulationTimerRef = useRef(null);
   const heartbeatTimerRef = useRef(null);
   const latestTimestampRef = useRef(Date.now());
-  const simCurrentRpmRef = useRef(1400);
 
   // Simpan pengaturan ke localStorage
   const updateSettings = useCallback((newSettings) => {
@@ -187,18 +84,11 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // Simpan profil kompresor ke localStorage
-  const updateCompressorProfile = useCallback((profile) => {
-    setActiveCompressorProfile(profile);
-    localStorage.setItem('ac_datalogger_compressor_profile', JSON.stringify(profile));
-  }, []);
-
   // Simpan perubahan device id terpilih
   const changeSelectedDevice = useCallback((deviceId) => {
     setSelectedDeviceId(deviceId);
     localStorage.setItem('ac_datalogger_device_id', deviceId);
     setRealtimeBuffer([]);
-    setRpmRealtimeBuffer([]);
   }, []);
 
   // Update dan simpan parameter perangkat ke memory & localStorage
@@ -264,49 +154,15 @@ export function AppProvider({ children }) {
     });
   }, [isStreamPaused, settings.bufferLimit, settings.voltageTrimOffset, settings.tempTrimOffset, settings.humidityTrimOffset]);
 
-  // Tambahkan pembacaan RPM kompresor baru ke buffer
-  const appendRpmReading = useCallback((rpmReading) => {
-    if (isStreamPaused) return;
-
-    const rpmMult = Number(settings.rpmMultiplier) || 1.0;
-    let processedRpm = rpmReading;
-    if (rpmReading && rpmMult !== 1.0) {
-      const rawRpm = Number(rpmReading.estimated_rpm ?? rpmReading.rpm ?? 0);
-      if (rawRpm > 0) {
-        const adjustedRpm = Math.max(0, Math.round(rawRpm * rpmMult));
-        processedRpm = {
-          ...rpmReading,
-          estimated_rpm: adjustedRpm,
-          rpm: adjustedRpm,
-        };
-      }
-    }
-
-    setLatestRpmReading(processedRpm);
-    latestTimestampRef.current = Date.now();
-    setSecondsSinceLastPacket(0);
-    setIsDeviceOnline(true);
-
-    setRpmRealtimeBuffer((prev) => {
-      const updated = [...prev, processedRpm];
-      if (updated.length > settings.bufferLimit) {
-        return updated.slice(updated.length - settings.bufferLimit);
-      }
-      return updated;
-    });
-  }, [isStreamPaused, settings.bufferLimit, settings.rpmMultiplier]);
-
   // Reset buffer data grafik lokal (RAM)
   const resetChartBuffer = useCallback(() => {
     setRealtimeBuffer([]);
-    setRpmRealtimeBuffer([]);
   }, []);
 
   // Reset seluruh data tersimpan (Buffer lokal + Database Supabase)
   const resetStoredData = useCallback(async (includeDatabase = true) => {
     // 1. Kosongkan state buffer lokal seketika
     setRealtimeBuffer([]);
-    setRpmRealtimeBuffer([]);
 
     if (!includeDatabase) {
       return { success: true, message: 'Buffer grafik lokal berhasil dibersihkan.' };
@@ -325,18 +181,14 @@ export function AppProvider({ children }) {
 
       if (error) {
         console.warn('RPC reset_device_telemetry gagal, mencoba delete langsung:', error);
-        await Promise.all([
-          client.from('ac_readings').delete().eq('device_id', selectedDeviceId),
-          client.from('compressor_rpm_measurements').delete().eq('device_id', selectedDeviceId),
-        ]);
+        await client.from('ac_readings').delete().eq('device_id', selectedDeviceId);
       }
 
       setLatestReading(null);
-      setLatestRpmReading(null);
 
       return { 
         success: true, 
-        message: 'Seluruh riwayat data telemetri AC & RPM perangkat berhasil di-reset.',
+        message: 'Seluruh riwayat data telemetri AC perangkat berhasil di-reset.',
         details: data 
       };
     } catch (err) {
@@ -365,7 +217,7 @@ export function AppProvider({ children }) {
   }, []);
 
   // --------------------------------------------------------------------------
-  // MODE SIMULASI REALISTIS (AC TEGANGAN + KOMPRESOR RPM SIMULATOR)
+  // MODE SIMULASI REALISTIS (AC TEGANGAN + SHT31 SUHU & KELEMBAPAN)
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (!isSimulating) {
@@ -381,11 +233,11 @@ export function AppProvider({ children }) {
       simStep++;
       const nowIso = new Date().toISOString();
 
-      // 1. Simulasi PLN & Suhu
+      // Simulasi PLN True-RMS & Suhu SHT31
       const baseV = 220.0 + 3.0 * Math.sin(simStep * 0.1) + (Math.random() - 0.5) * 1.5;
       const cyclePos = (simStep % 120) / 120;
-      const baseTemp = 25.0 - 3.5 * Math.sin(cyclePos * Math.PI) + (Math.random() - 0.5) * 0.2;
-      const baseHum = 58.0 + 8.0 * Math.sin(cyclePos * Math.PI) + (Math.random() - 0.5) * 0.5;
+      const baseTemp = 24.5 - 3.5 * Math.sin(cyclePos * Math.PI) + (Math.random() - 0.5) * 0.2;
+      const baseHum = 55.0 + 8.0 * Math.sin(cyclePos * Math.PI) + (Math.random() - 0.5) * 0.5;
 
       const simReading = {
         id: `sim-ac-${simStep}`,
@@ -399,98 +251,6 @@ export function AppProvider({ children }) {
       };
       appendReading(simReading);
 
-      // 2. Simulasi Compressor RPM Berdasarkan Mode Terpilih
-      let targetRpm = 0;
-      let status = 'OFF';
-      let trend = 'STOPPED';
-      let signal = 'VALID';
-
-      switch (rpmSimMode) {
-        case 'OFF':
-          simCurrentRpmRef.current = 0;
-          status = 'OFF';
-          trend = 'STOPPED';
-          signal = 'NO_SIGNAL';
-          break;
-
-        case 'LOW':
-          targetRpm = 1350 + Math.sin(simStep * 0.15) * 60;
-          simCurrentRpmRef.current += (targetRpm - simCurrentRpmRef.current) * 0.2;
-          status = 'LOW';
-          trend = 'STABLE';
-          signal = 'VALID';
-          break;
-
-        case 'MEDIUM':
-          targetRpm = 2550 + Math.sin(simStep * 0.2) * 80;
-          simCurrentRpmRef.current += (targetRpm - simCurrentRpmRef.current) * 0.2;
-          status = 'MEDIUM';
-          trend = 'STABLE';
-          signal = 'VALID';
-          break;
-
-        case 'HIGH':
-          targetRpm = 3900 + Math.sin(simStep * 0.25) * 110;
-          simCurrentRpmRef.current += (targetRpm - simCurrentRpmRef.current) * 0.2;
-          status = 'HIGH';
-          trend = 'STABLE';
-          signal = 'VALID';
-          break;
-
-        case 'ACCEL':
-          if (simCurrentRpmRef.current < 900) simCurrentRpmRef.current = 1000;
-          simCurrentRpmRef.current += 130;
-          if (simCurrentRpmRef.current > 4200) simCurrentRpmRef.current = 1000;
-          status = simCurrentRpmRef.current < 1800 ? 'LOW' : (simCurrentRpmRef.current < 3200 ? 'MEDIUM' : 'HIGH');
-          trend = 'ACCELERATING';
-          signal = 'VALID';
-          break;
-
-        case 'DECEL':
-          if (simCurrentRpmRef.current > 4200 || simCurrentRpmRef.current < 900) simCurrentRpmRef.current = 4000;
-          simCurrentRpmRef.current -= 130;
-          if (simCurrentRpmRef.current < 900) simCurrentRpmRef.current = 4000;
-          status = simCurrentRpmRef.current < 1800 ? 'LOW' : (simCurrentRpmRef.current < 3200 ? 'MEDIUM' : 'HIGH');
-          trend = 'DECELERATING';
-          signal = 'VALID';
-          break;
-
-        case 'UNSTABLE':
-          simCurrentRpmRef.current = 1600 + (Math.random() - 0.5) * 2200;
-          status = 'UNKNOWN';
-          trend = 'UNKNOWN';
-          signal = 'UNSTABLE';
-          break;
-
-        case 'LOST':
-        default:
-          simCurrentRpmRef.current = 0;
-          status = 'OFF';
-          trend = 'STOPPED';
-          signal = 'NO_SIGNAL';
-          break;
-      }
-
-      const calcRpm = Math.max(0, Math.round(simCurrentRpmRef.current));
-      const pInterval = calcRpm > 0 ? Math.round(60000000 / (calcRpm * 2)) : 0;
-
-      const simRpmReading = {
-        id: `sim-rpm-${simStep}`,
-        device_id: selectedDeviceId,
-        recorded_at: nowIso,
-        compressor_status: status,
-        estimated_rpm: calcRpm,
-        pulse_count: simStep * 30,
-        pulse_interval: pInterval,
-        speed_category: status,
-        speed_trend: trend,
-        signal_status: signal,
-        calibration_status: activeCompressorProfile.is_calibrated ? 'CALIBRATED' : 'UNCALIBRATED',
-        sensor_channel: activeCompressorProfile.sensor_channel || 'U',
-        data_source: 'SIMULATOR',
-      };
-      appendRpmReading(simRpmReading);
-
     }, 1000);
 
     return () => {
@@ -498,41 +258,35 @@ export function AppProvider({ children }) {
         clearInterval(simulationTimerRef.current);
       }
     };
-  }, [isSimulating, selectedDeviceId, appendReading, appendRpmReading, rpmSimMode, activeCompressorProfile]);
+  }, [isSimulating, selectedDeviceId, appendReading]);
 
   // --------------------------------------------------------------------------
   // KALIBRASI CLOUD PERSISTENCE & REALTIME MULTI-DEVICE SYNCHRONIZATION
   // --------------------------------------------------------------------------
   // Simpan kalibrasi secara permanen ke Supabase Database & Broadcast ke semua device
-  const persistCalibrationToCloud = useCallback(async (calSettings, calProfile) => {
+  const persistCalibrationToCloud = useCallback(async (calSettings) => {
     const client = getSupabaseClient();
     let cloudSaved = false;
 
     const currentSettings = calSettings || settings;
-    const currentProfile = calProfile || activeCompressorProfile;
 
     const calData = {
       calibration: {
         voltageTrimOffset: Number(currentSettings.voltageTrimOffset) || 0,
         tempTrimOffset: Number(currentSettings.tempTrimOffset) || 0,
         humidityTrimOffset: Number(currentSettings.humidityTrimOffset) || 0,
-        rpmMultiplier: Number(currentSettings.rpmMultiplier) || 1.0,
-        motor_poles: Number(currentProfile?.motor_poles) || 4,
-        pulses_per_revolution: (Number(currentProfile?.motor_poles) || 4) / 2,
         updatedAt: new Date().toISOString(),
-        updatedBy: 'AI Agent & Web Dashboard'
+        updatedBy: 'Agent AI & Web Dashboard'
       }
     };
 
     if (client) {
       try {
-        // 1. Simpan permanen ke tabel compressor_profiles row 'universal'
+        // Simpan permanen ke tabel konfigurasi
         const { error } = await client
           .from('compressor_profiles')
           .update({
             notes: JSON.stringify(calData),
-            motor_poles: Number(currentProfile?.motor_poles) || 4,
-            pulses_per_revolution: (Number(currentProfile?.motor_poles) || 4) / 2,
             is_calibrated: true,
             updated_at: new Date().toISOString()
           })
@@ -545,7 +299,7 @@ export function AppProvider({ children }) {
         console.warn('Gagal menyimpan kalibrasi ke Supabase:', e);
       }
 
-      // 2. Broadcast ke semua tab/browser/perangkat yang sedang terhubung
+      // Broadcast ke semua tab/browser/perangkat yang sedang terhubung
       try {
         const channel = syncChannelRef.current || client.channel('system_calibration_sync');
         await channel.send({
@@ -559,9 +313,9 @@ export function AppProvider({ children }) {
     }
 
     return { cloudSaved, calData };
-  }, [settings, activeCompressorProfile]);
+  }, [settings]);
 
-  // Eksekusi kalibrasi otomatis oleh AI Agent
+  // Eksekusi kalibrasi otomatis oleh Agent AI
   const applyAiCalibration = useCallback(async (actionType, args = {}) => {
     let result = {
       success: false,
@@ -576,7 +330,6 @@ export function AppProvider({ children }) {
     };
 
     let updatedSettings = { ...settings };
-    let updatedProfile = { ...activeCompressorProfile };
 
     if (actionType === 'calibrate_voltage') {
       const rawReading = latestReading?.voltage_v ?? 220;
@@ -631,7 +384,7 @@ export function AppProvider({ children }) {
       result = {
         success: true,
         action: actionType,
-        parameter: 'Suhu Udara Evaporator / Ruangan (SHT31)',
+        parameter: 'Suhu Udara (Sensirion SHT31)',
         unit: '°C',
         oldValue: rawReading,
         newValue: calculatedNew,
@@ -661,49 +414,12 @@ export function AppProvider({ children }) {
       result = {
         success: true,
         action: actionType,
-        parameter: 'Kelembapan Udara (SHT31)',
+        parameter: 'Kelembapan Udara (Sensirion SHT31)',
         unit: '%RH',
         oldValue: rawReading,
         newValue: calculatedNew,
         offset: newOffset,
         notes: args.explanation || `Offset kelembapan disesuaikan menjadi ${newOffset > 0 ? '+' : ''}${newOffset} %RH`,
-      };
-    } else if (actionType === 'calibrate_compressor_rpm') {
-      const currentRpm = latestRpmReading ? Number(latestRpmReading.estimated_rpm ?? latestRpmReading.rpm ?? 0) : 0;
-      const oldPoles = activeCompressorProfile.motor_poles || 4;
-      const newPoles = args.motor_poles ? parseInt(args.motor_poles, 10) : oldPoles;
-      const oldMult = Number(settings.rpmMultiplier) || 1.0;
-      let newMult = args.rpm_multiplier ? Math.round(Number(args.rpm_multiplier) * 100) / 100 : oldMult;
-
-      if (args.target_rpm && currentRpm > 0) {
-        newMult = Math.round((Number(args.target_rpm) / (currentRpm / oldMult)) * 100) / 100;
-      }
-
-      updatedSettings.rpmMultiplier = newMult;
-      updatedProfile = {
-        ...activeCompressorProfile,
-        motor_poles: newPoles,
-        pulses_per_revolution: newPoles / 2,
-        is_calibrated: true
-      };
-
-      updateSettings({ rpmMultiplier: newMult });
-      updateCompressorProfile(updatedProfile);
-
-      const calcNewRpm = Math.round(currentRpm * (newMult / oldMult) * (oldPoles / newPoles));
-      if (latestRpmReading) {
-        setLatestRpmReading(prev => prev ? { ...prev, estimated_rpm: calcNewRpm, rpm: calcNewRpm } : prev);
-      }
-
-      result = {
-        success: true,
-        action: actionType,
-        parameter: 'Kecepatan Kompresor Inverter (RPM)',
-        unit: 'RPM',
-        oldValue: `${currentRpm} RPM (${oldPoles}-Pole, x${oldMult})`,
-        newValue: `${calcNewRpm} RPM (${newPoles}-Pole, x${newMult})`,
-        offset: `Kutub: ${newPoles}-Pole, Mult: ${newMult}`,
-        notes: args.explanation || `Konfigurasi kompresor disetel ke ${newPoles}-Pole dengan multiplier ${newMult}`,
       };
     } else if (actionType === 'reset_calibration') {
       const param = (args.parameter || 'all').toLowerCase();
@@ -716,15 +432,6 @@ export function AppProvider({ children }) {
       if (param === 'humidity' || param === 'all') {
         updatedSettings.humidityTrimOffset = 0.0;
       }
-      if (param === 'rpm' || param === 'all') {
-        updatedSettings.rpmMultiplier = 1.0;
-        updatedProfile = {
-          ...activeCompressorProfile,
-          motor_poles: 4,
-          pulses_per_revolution: 2.0,
-        };
-        updateCompressorProfile(updatedProfile);
-      }
 
       updateSettings(updatedSettings);
 
@@ -734,18 +441,18 @@ export function AppProvider({ children }) {
         parameter: param === 'all' ? 'Semua Parameter Sensor' : param.toUpperCase(),
         unit: '-',
         oldValue: 'Kalibrasi Kustom',
-        newValue: 'Standar Default (0 / 1.0)',
+        newValue: 'Standar Default (0.0)',
         offset: 0,
         notes: args.explanation || `Kalibrasi parameter [${param}] berhasil di-reset ke nilai default pabrik.`,
       };
     }
 
     // Simpan permanen ke Supabase Cloud & Broadcast ke semua layar/koneksi aktif
-    const { cloudSaved } = await persistCalibrationToCloud(updatedSettings, updatedProfile);
+    const { cloudSaved } = await persistCalibrationToCloud(updatedSettings);
     result.cloudSaved = cloudSaved;
 
     return result;
-  }, [settings, activeCompressorProfile, latestReading, latestRpmReading, updateSettings, updateCompressorProfile, persistCalibrationToCloud]);
+  }, [settings, latestReading, updateSettings, persistCalibrationToCloud]);
 
   // --------------------------------------------------------------------------
   // LOAD PERANGKAT & INITIAL READINGS DARI SUPABASE
@@ -764,7 +471,7 @@ export function AppProvider({ children }) {
     }
 
     try {
-      // 0. Ambil Kalibrasi Permanen Terkini dari Supabase Cloud (tabel compressor_profiles)
+      // 0. Ambil Kalibrasi Permanen Terkini dari Supabase Cloud
       let effectiveSettings = { ...settings };
       try {
         const { data: profData, error: profErr } = await client
@@ -784,7 +491,6 @@ export function AppProvider({ children }) {
                 voltageTrimOffset: cal.voltageTrimOffset !== undefined ? Number(cal.voltageTrimOffset) : effectiveSettings.voltageTrimOffset,
                 tempTrimOffset: cal.tempTrimOffset !== undefined ? Number(cal.tempTrimOffset) : effectiveSettings.tempTrimOffset,
                 humidityTrimOffset: cal.humidityTrimOffset !== undefined ? Number(cal.humidityTrimOffset) : effectiveSettings.humidityTrimOffset,
-                rpmMultiplier: cal.rpmMultiplier !== undefined ? Number(cal.rpmMultiplier) : effectiveSettings.rpmMultiplier,
               };
 
               setSettings((prev) => {
@@ -792,19 +498,6 @@ export function AppProvider({ children }) {
                 localStorage.setItem('ac_datalogger_settings', JSON.stringify(merged));
                 return merged;
               });
-
-              if (cal.motor_poles) {
-                setActiveCompressorProfile((prev) => {
-                  const updated = {
-                    ...prev,
-                    motor_poles: Number(cal.motor_poles),
-                    pulses_per_revolution: Number(cal.motor_poles) / 2,
-                    is_calibrated: true
-                  };
-                  localStorage.setItem('ac_datalogger_compressor_profile', JSON.stringify(updated));
-                  return updated;
-                });
-              }
             }
           } catch (_e) {}
         }
@@ -887,35 +580,6 @@ export function AppProvider({ children }) {
         setDbStatus('connected');
       }
 
-      // 3. Ambil data COMPRESSOR RPM terakhir (60 record)
-      try {
-        const { data: rpmData, error: rpmErr } = await client
-          .from('compressor_rpm_measurements')
-          .select('*')
-          .eq('device_id', selectedDeviceId)
-          .order('recorded_at', { ascending: false })
-          .limit(60);
-
-        if (!rpmErr && rpmData && rpmData.length > 0) {
-          const rpmMult = Number(effectiveSettings.rpmMultiplier) || 1.0;
-          const chronologicalRpm = [...rpmData].reverse().map(r => {
-            if (rpmMult !== 1.0) {
-              const rawRpm = Number(r.estimated_rpm ?? r.rpm ?? 0);
-              if (rawRpm > 0) {
-                const adjustedRpm = Math.max(0, Math.round(rawRpm * rpmMult));
-                return { ...r, estimated_rpm: adjustedRpm, rpm: adjustedRpm };
-              }
-            }
-            return r;
-          });
-          setRpmRealtimeBuffer(chronologicalRpm);
-          const latestRpm = chronologicalRpm[chronologicalRpm.length - 1];
-          setLatestRpmReading(latestRpm);
-        }
-      } catch (_e) {
-        // Tabel compressor_rpm_measurements mungkin belum di-migrate, tidak apa-apa
-      }
-
     } catch (err) {
       console.error('Error fetching initial data:', err);
       setDbStatus('disconnected');
@@ -924,7 +588,7 @@ export function AppProvider({ children }) {
 
   // --------------------------------------------------------------------------
   // SUPABASE REALTIME SUBSCRIPTION
-  // Berlangganan event INSERT pada tabel ac_readings & compressor_rpm_measurements
+  // Berlangganan event INSERT pada tabel ac_readings
   // Serta channel broadcast system_calibration_sync untuk update instan multi-device
   // --------------------------------------------------------------------------
   useEffect(() => {
@@ -973,33 +637,7 @@ export function AppProvider({ children }) {
 
     realtimeChannelRef.current = channelAC;
 
-    // Channel 2: Telemetri COMPRESSOR RPM
-    const channelNameRPM = `realtime-rpm-${selectedDeviceId}`;
-    if (rpmChannelRef.current) {
-      client.removeChannel(rpmChannelRef.current);
-    }
-
-    const channelRPM = client
-      .channel(channelNameRPM)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'compressor_rpm_measurements',
-          filter: `device_id=eq.${selectedDeviceId}`,
-        },
-        (payload) => {
-          if (payload.new) {
-            appendRpmReading(payload.new);
-          }
-        }
-      )
-      .subscribe();
-
-    rpmChannelRef.current = channelRPM;
-
-    // Channel 3: Realtime Broadcast Synchronization untuk Kalibrasi antar Perangkat
+    // Channel 2: Realtime Broadcast Synchronization untuk Kalibrasi antar Perangkat
     if (syncChannelRef.current) {
       client.removeChannel(syncChannelRef.current);
     }
@@ -1017,24 +655,10 @@ export function AppProvider({ children }) {
               voltageTrimOffset: cal.voltageTrimOffset !== undefined ? Number(cal.voltageTrimOffset) : prev.voltageTrimOffset,
               tempTrimOffset: cal.tempTrimOffset !== undefined ? Number(cal.tempTrimOffset) : prev.tempTrimOffset,
               humidityTrimOffset: cal.humidityTrimOffset !== undefined ? Number(cal.humidityTrimOffset) : prev.humidityTrimOffset,
-              rpmMultiplier: cal.rpmMultiplier !== undefined ? Number(cal.rpmMultiplier) : prev.rpmMultiplier,
             };
             localStorage.setItem('ac_datalogger_settings', JSON.stringify(merged));
             return merged;
           });
-
-          if (cal.motor_poles) {
-            setActiveCompressorProfile((prev) => {
-              const updated = {
-                ...prev,
-                motor_poles: Number(cal.motor_poles),
-                pulses_per_revolution: Number(cal.motor_poles) / 2,
-                is_calibrated: true
-              };
-              localStorage.setItem('ac_datalogger_compressor_profile', JSON.stringify(updated));
-              return updated;
-            });
-          }
         }
       })
       .subscribe();
@@ -1043,10 +667,9 @@ export function AppProvider({ children }) {
 
     return () => {
       if (channelAC) client.removeChannel(channelAC);
-      if (channelRPM) client.removeChannel(channelRPM);
       if (channelSync) client.removeChannel(channelSync);
     };
-  }, [selectedDeviceId, isSimulating, loadInitialData, appendReading, appendRpmReading]);
+  }, [selectedDeviceId, isSimulating, loadInitialData, appendReading]);
 
   return (
     <AppContext.Provider
@@ -1056,12 +679,6 @@ export function AppProvider({ children }) {
         devices,
         latestReading,
         realtimeBuffer,
-        latestRpmReading,
-        rpmRealtimeBuffer,
-        activeCompressorProfile,
-        updateCompressorProfile,
-        rpmSimMode,
-        setRpmSimMode,
         dbStatus,
         isDeviceOnline,
         secondsSinceLastPacket,

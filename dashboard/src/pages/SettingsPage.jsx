@@ -27,7 +27,6 @@ export default function SettingsPage() {
     voltageTrimOffset: 0.0,
     tempTrimOffset: 0.0,
     humidityTrimOffset: 0.0,
-    rpmMultiplier: 1.0,
     ...settings,
   }));
 
@@ -56,7 +55,6 @@ export default function SettingsPage() {
       humidityLow: parseFloat(formSettings.humidityLow),
       humidityHigh: parseFloat(formSettings.humidityHigh),
       humidityTrimOffset: parseFloat(formSettings.humidityTrimOffset || 0),
-      rpmMultiplier: parseFloat(formSettings.rpmMultiplier || 1.0),
       bufferLimit: parseInt(formSettings.bufferLimit, 10),
     };
 
@@ -184,7 +182,6 @@ export default function SettingsPage() {
                   voltageTrimOffset: 0.0,
                   tempTrimOffset: 0.0,
                   humidityTrimOffset: 0.0,
-                  rpmMultiplier: 1.0,
                 })}
                 className="px-2.5 py-1 bg-industrial-900 hover:bg-industrial-850 border border-industrial-700 text-slate-300 rounded text-[10px] font-mono cursor-pointer transition-colors whitespace-nowrap self-start sm:self-auto"
               >
@@ -192,7 +189,7 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Offset Tegangan AC */}
               <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
                 <div className="flex items-center justify-between mb-1.5">
@@ -327,54 +324,6 @@ export default function SettingsPage() {
                     className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
                   >
                     0.0%
-                  </button>
-                </div>
-              </div>
-
-              {/* Faktor Pengali RPM Kompresor */}
-              <div className="bg-industrial-900/60 p-3 rounded-lg border border-industrial-800">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-mono text-slate-300 font-semibold">
-                    Pengali Kecepatan Kompresor:
-                  </label>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-950/80 text-purple-300 border border-purple-500/40">
-                    x{formSettings.rpmMultiplier || 1.0}
-                  </span>
-                </div>
-                <div className="relative mb-2">
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0.1"
-                    max="5.0"
-                    value={formSettings.rpmMultiplier ?? 1.0}
-                    onChange={(e) => setFormSettings({ ...formSettings, rpmMultiplier: e.target.value })}
-                    className="w-full bg-industrial-950 border border-industrial-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-purple-400 font-bold"
-                    placeholder="1.0"
-                  />
-                  <span className="absolute right-3 top-1.5 text-xs font-mono text-slate-400">Factor</span>
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 1.0 })}
-                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
-                  >
-                    x1.0 (Standar)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 0.95 })}
-                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
-                  >
-                    x0.95 (-5%)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormSettings({ ...formSettings, rpmMultiplier: 1.05 })}
-                    className="px-2 py-0.5 bg-industrial-950 hover:bg-industrial-800 border border-industrial-700 text-slate-400 rounded text-[10px] font-mono cursor-pointer"
-                  >
-                    x1.05 (+5%)
                   </button>
                 </div>
               </div>

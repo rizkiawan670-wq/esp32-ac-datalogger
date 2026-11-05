@@ -28,9 +28,11 @@ import {
   Layers,
   HelpCircle,
   Database,
-  X
+  X,
+  Wind
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { calculateDewPoint } from '../utils/analytics';
 import { 
   sendChatMessage, 
   getStoredGeminiKey, 
@@ -42,8 +44,6 @@ export default function AiDiagnosticsPage() {
   const {
     selectedDeviceId,
     latestReading,
-    latestRpmReading,
-    activeCompressorProfile,
     isDeviceOnline,
     settings,
     applyAiCalibration,
@@ -73,7 +73,7 @@ export default function AiDiagnosticsPage() {
         id: 'welcome',
         role: 'assistant',
         text: `### 🤖 Halo! Saya Agent AI AC Datalogger.
-Saya beroperasi secara **100% Full AI Online** untuk membantu Anda menganalisis telemetri tegangan True-RMS, putaran kompresor (RPM), kondisi termal ruangan, serta melakukan kalibrasi sensor otomatis langsung via chat.
+Saya beroperasi secara **100% Full AI Online** untuk membantu Anda menganalisis telemetri tegangan True-RMS, suhu udara, kelembapan relatif, titik embun (dew point), serta melakukan kalibrasi sensor otomatis langsung via chat.
 
 Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:`,
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
@@ -95,12 +95,11 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
 
-  // Snapshot telemetri terkini (akurat mengambil voltage_v & rpm)
-  const currentRpm = latestRpmReading ? Number(latestRpmReading.estimated_rpm ?? latestRpmReading.rpm ?? 0) : 0;
+  // Snapshot telemetri terkini
   const currentVoltage = latestReading ? Number(latestReading.voltage_v ?? latestReading.voltage_rms ?? 0) : 0;
   const currentTemp = latestReading ? Number(latestReading.temperature_c ?? 0) : 0;
   const currentHumidity = latestReading ? Number(latestReading.humidity_rh ?? 0) : 0;
-  const isRunning = currentRpm >= 400 && latestRpmReading?.compressor_status !== 'OFF';
+  const currentDewPoint = calculateDewPoint(currentTemp, currentHumidity);
 
   const telemetryContext = {
     deviceId: selectedDeviceId,
@@ -108,11 +107,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
     voltage: currentVoltage,
     temperature: currentTemp,
     humidity: currentHumidity,
-    rpm: currentRpm,
-    isRunning: isRunning,
-    motorPoles: activeCompressorProfile?.motor_poles || 4,
-    speedCategory: latestRpmReading?.speed_category || (currentRpm < 400 ? 'OFF' : 'LOW'),
-    profileName: activeCompressorProfile ? `${activeCompressorProfile.brand} (${activeCompressorProfile.motor_poles} Pole)` : 'Universal Inverter',
+    dewPoint: currentDewPoint,
     settings: settings
   };
 
@@ -318,7 +313,7 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
     {
       icon: Activity,
       label: 'Analisis Kondisi Saat Ini',
-      query: 'Bagaimana analisis kondisi telemetri sistem saat ini berdasarkan tegangan True-RMS, suhu, dan RPM kompresor aktual?'
+      query: 'Bagaimana analisis kondisi telemetri sistem saat ini berdasarkan tegangan True-RMS, suhu, dan kelembapan aktual?'
     },
     {
       icon: Layers,
@@ -326,9 +321,9 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
       query: 'Jelaskan alur dan proses kerja sistem AC datalogger ini dari mikrokontroler ESP32 hingga tampil di dashboard web.'
     },
     {
-      icon: Gauge,
-      label: 'Cara Kerja Estimasi RPM',
-      query: 'Bagaimana cara sistem menghitung dan memperkirakan RPM motor kompresor inverter dari frekuensi sinyal driver?'
+      icon: Wind,
+      label: 'Evaluasi Titik Embun & Kondensasi',
+      query: 'Bagaimana analisis titik embun (dew point) dan potensi kondensasi air pada unit AC berdasarkan suhu dan kelembapan saat ini?'
     }
   ];
 
@@ -551,15 +546,15 @@ Silakan pilih topik cepat di bawah atau ketik langsung perintah/pertanyaan Anda:
             <Zap className="w-4 h-4 text-amber-500/70" />
           </div>
 
-          {/* Putaran Kompresor */}
+          {/* Titik Embun */}
           <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800/80 flex items-center justify-between">
             <div>
-              <span className="text-[10px] text-slate-500 font-mono block">ESTIMASI RPM</span>
-              <span className="text-sm font-bold font-mono text-electric-orange">
-                {telemetryContext.rpm.toLocaleString('id-ID')} RPM
+              <span className="text-[10px] text-slate-500 font-mono block">TITIK EMBUN</span>
+              <span className="text-sm font-bold font-mono text-cyan-400">
+                {telemetryContext.dewPoint !== null && telemetryContext.dewPoint !== undefined ? `${telemetryContext.dewPoint.toFixed(1)} °C` : '--.- °C'}
               </span>
             </div>
-            <Gauge className="w-4 h-4 text-electric-orange/70" />
+            <Wind className="w-4 h-4 text-cyan-500/70" />
           </div>
 
           {/* Suhu Evaporator */}
