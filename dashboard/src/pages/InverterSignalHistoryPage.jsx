@@ -38,44 +38,66 @@ export default function InverterSignalHistoryPage() {
 
   // Siapkan data riwayat dari buffer sinyal realtime atau dataset terstruktur
   const records = useMemo(() => {
-    let data = [...signalRealtimeBuffer];
+    let raw = [...signalRealtimeBuffer];
 
-    // Jika buffer kosong (misal baru buka), sediakan baris fallback representatif
-    if (data.length === 0) {
+    // Jika buffer kosong (misal baru buka), sediakan baris representatif
+    if (raw.length === 0) {
       const now = Date.now();
       for (let i = 25; i >= 0; i--) {
         const time = new Date(now - i * 3000);
-        data.push({
+        raw.push({
           id: `sig-init-${i}`,
-          created_at: time.toISOString(),
-          voltage: 221.4 + Math.sin(i / 3) * 1.8,
-          room_temp: 24.2 + (i % 4) * 0.1,
-          humidity: 58.5 - (i % 3) * 0.3,
+          measured_at: time.toISOString(),
+          voltage_v: 221.4 + Math.sin(i / 3) * 1.8,
+          room_temp_c: 24.2 + (i % 4) * 0.1,
+          humidity_rh: 58.5 - (i % 3) * 0.3,
           compressor_rpm: 3450 + Math.floor(Math.sin(i / 2) * 200),
           inverter_freq_hz: 58.0 + (i % 3),
           target_rpm: 3600,
-          indoor_coil_temp: 8.5 + (i % 3) * 0.2,
-          outdoor_coil_temp: 36.2 + (i % 4) * 0.3,
-          outdoor_ambient_temp: 32.5,
-          discharge_pipe_temp: 74.2 + (i % 5) * 0.5,
+          indoor_coil_temp_c: 8.5 + (i % 3) * 0.2,
+          outdoor_coil_temp_c: 36.2 + (i % 4) * 0.3,
+          outdoor_ambient_temp_c: 32.5,
+          discharge_pipe_temp_c: 74.2 + (i % 5) * 0.5,
           eev_steps: 185 + (i % 10),
-          indoor_fan_rpm: 880,
-          outdoor_fan_rpm: 750,
+          fan_speed_indoor_rpm: 880,
+          fan_speed_outdoor_rpm: 750,
           error_code: '00',
-          mode: 'COOL',
-          packet_hex: `5A A5 18 01 ${Math.floor(Math.random() * 255).toString(16).padStart(2, '0').toUpperCase()} 00 00`
+          operating_mode: 'COOL',
+          packet_raw_hex: `5A A5 18 01 ${Math.floor(Math.random() * 255).toString(16).padStart(2, '0').toUpperCase()} 00 00`
         });
       }
     }
+
+    // Normalisasi properti agar seragam baik dari sinyal live maupun buffer historis
+    let data = raw.map((r, idx) => ({
+      id: r.id || `sig-${idx}`,
+      timestamp: r.measured_at || r.created_at || new Date().toISOString(),
+      voltage: r.voltage_v != null ? Number(r.voltage_v) : (r.voltage != null ? Number(r.voltage) : 220.0),
+      room_temp: r.room_temp_c != null ? Number(r.room_temp_c) : (r.room_temp != null ? Number(r.room_temp) : 24.5),
+      humidity: r.humidity_rh != null ? Number(r.humidity_rh) : (r.humidity != null ? Number(r.humidity) : 55.0),
+      compressor_rpm: r.compressor_rpm != null ? Number(r.compressor_rpm) : 0,
+      inverter_freq_hz: r.inverter_freq_hz != null ? Number(r.inverter_freq_hz) : 0,
+      target_rpm: r.target_rpm || r.target_compressor_rpm || 3600,
+      indoor_coil_temp: r.indoor_coil_temp_c != null ? Number(r.indoor_coil_temp_c) : (r.indoor_coil_temp != null ? Number(r.indoor_coil_temp) : 9.0),
+      outdoor_coil_temp: r.outdoor_coil_temp_c != null ? Number(r.outdoor_coil_temp_c) : (r.outdoor_coil_temp != null ? Number(r.outdoor_coil_temp) : 38.0),
+      outdoor_ambient_temp: r.outdoor_ambient_temp_c != null ? Number(r.outdoor_ambient_temp_c) : (r.outdoor_ambient_temp != null ? Number(r.outdoor_ambient_temp) : 32.0),
+      discharge_pipe_temp: r.discharge_pipe_temp_c != null ? Number(r.discharge_pipe_temp_c) : (r.discharge_pipe_temp != null ? Number(r.discharge_pipe_temp) : 74.0),
+      eev_steps: r.eev_steps != null ? Number(r.eev_steps) : 180,
+      indoor_fan_rpm: r.fan_speed_indoor_rpm || r.indoor_fan_rpm || 800,
+      outdoor_fan_rpm: r.fan_speed_outdoor_rpm || r.outdoor_fan_rpm || 750,
+      mode: r.operating_mode || r.mode || 'COOL',
+      error_code: r.error_code || '00',
+      packet_hex: r.packet_raw_hex || r.packet_hex || '5A A5 18 01 00'
+    }));
 
     if (filterErrorOnly) {
       data = data.filter(d => d.error_code && d.error_code !== '00');
     }
 
     if (sortOrder === 'asc') {
-      data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     } else {
-      data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
 
     return data;
@@ -112,7 +134,7 @@ export default function InverterSignalHistoryPage() {
     ];
 
     const rows = records.map(r => [
-      new Date(r.created_at).toLocaleString('id-ID'),
+      new Date(r.timestamp).toLocaleString('id-ID'),
       r.voltage?.toFixed(1) || '0',
       r.room_temp?.toFixed(1) || '0',
       r.humidity?.toFixed(1) || '0',
@@ -257,7 +279,7 @@ export default function InverterSignalHistoryPage() {
                     >
                       {/* Waktu */}
                       <td className="px-4 py-3 whitespace-nowrap text-slate-200 font-medium">
-                        {new Date(r.created_at).toLocaleTimeString('id-ID', {
+                        {new Date(r.timestamp).toLocaleTimeString('id-ID', {
                           hour: '2-digit',
                           minute: '2-digit',
                           second: '2-digit'
