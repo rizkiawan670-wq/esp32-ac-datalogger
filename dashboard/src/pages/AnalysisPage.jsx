@@ -11,7 +11,6 @@ import {
   Thermometer, 
   Droplets, 
   AlertTriangle, 
-  ShieldAlert, 
   HelpCircle, 
   CheckCircle, 
   TrendingUp, 
@@ -51,36 +50,17 @@ export default function AnalysisPage() {
   return (
     <div className="space-y-6">
       
-      {/* 1. MANDATORY ENGINEERING DISCLAIMER BANNER */}
-      <div className="p-4 rounded-xl bg-industrial-900 border border-amber-600/50 text-amber-200 text-xs shadow-md">
-        <div className="flex items-start space-x-3">
-          <ShieldAlert className="w-5 h-5 text-electric-amber flex-shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h4 className="font-bold text-sm text-electric-amber font-mono">
-              PERHATIAN TEKNISI PENDINGIN UDARA & KELISTRIKAN
-            </h4>
-            <p className="text-slate-300 leading-relaxed">
-              Analisis ini merupakan <strong>indikasi awal</strong> dari parameter terukur (tegangan listrik RMS, suhu udara, dan kelembapan relatif). 
-              <strong> JANGAN PERNAH</strong> menyimpulkan secara mutlak adanya kerusakan kompresor, kebocoran refrigeran (freon), 
-              atau kerusakan kapasitor hanya berdasarkan data sensor ini tanpa melakukan konfirmasi fisik langsung menggunakan 
-              <strong> Manifold Gauge (tekanan suction/discharge)</strong>, <strong>Clamp Meter (arus kerja kompresor Ampere)</strong>, 
-              dan inspeksi visual teknisi bersertifikat.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. PROFIL & KONTROL DETAIL KOMPRESOR INVERTER */}
+      {/* 1. PROFIL & KONTROL DETAIL KOMPRESOR INVERTER */}
       <section aria-label="Ringkasan RPM & Profil Compressor">
         <CompressorRpmSummary />
       </section>
 
-      {/* 3. DISTRIBUSI KECEPATAN COMPRESSOR (LOW / MEDIUM / HIGH) */}
+      {/* 2. DISTRIBUSI KECEPATAN COMPRESSOR (LOW / MEDIUM / HIGH) */}
       <section aria-label="Distribusi Kecepatan Compressor">
         <CompressorSpeedAnalysis />
       </section>
 
-      {/* 4. ANALISIS PERILAKU COMPRESSOR (KESIMPULAN NARATIF OTOMATIS) */}
+      {/* 3. ANALISIS PERILAKU COMPRESSOR (KESIMPULAN NARATIF OTOMATIS) */}
       <section aria-label="Analisis Perilaku Compressor">
         <CompressorBehaviorAnalysis />
       </section>
