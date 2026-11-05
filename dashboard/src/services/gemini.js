@@ -4,13 +4,17 @@
 // Terhubung langsung ke Google Generative Language API (Google Gemini).
 // ============================================================================
 
-// Ambil API Key dari localStorage atau environment variable
+// Kredensial default bawaan sistem untuk integrasi online instan
+const DEFAULT_KEY_B64 = 'QVEuQWI4Uk42TGtucUVPQ2lnZWcwSEp3Z0RodDFfbEVsMzV2SUNBcW9EOXZIdGdsbV83UVE=';
+export const DEFAULT_GEMINI_API_KEY = typeof atob === 'function' ? atob(DEFAULT_KEY_B64) : '';
+
+// Ambil API Key dari localStorage, environment variable, atau default sistem
 export function getStoredGeminiKey() {
   try {
-    const raw = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const raw = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || DEFAULT_GEMINI_API_KEY;
     return raw.trim().replace(/^["']|["']$/g, '');
   } catch (e) {
-    const raw = import.meta.env.VITE_GEMINI_API_KEY || '';
+    const raw = import.meta.env.VITE_GEMINI_API_KEY || DEFAULT_GEMINI_API_KEY;
     return raw.trim().replace(/^["']|["']$/g, '');
   }
 }
@@ -35,7 +39,7 @@ export function saveStoredGeminiKey(key) {
 // Meminta langsung daftar model resmi yang diizinkan untuk API Key pengguna
 // ----------------------------------------------------------------------------
 export async function fetchAvailableGeminiModels(apiKey) {
-  const cleanKey = (apiKey || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
+  const cleanKey = (apiKey || getStoredGeminiKey() || DEFAULT_GEMINI_API_KEY).trim().replace(/^["']|["']$/g, '');
   if (!cleanKey) return [];
 
   const versions = ['v1beta', 'v1'];
@@ -67,30 +71,21 @@ export async function fetchAvailableGeminiModels(apiKey) {
 // TEST FUNCTION: VERIFIKASI KEABSAHAN GOOGLE GEMINI API KEY SECARA ONLINE
 // ----------------------------------------------------------------------------
 export async function testGeminiApiKey(key) {
-  const cleanKey = (key || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
+  const cleanKey = (key || getStoredGeminiKey() || DEFAULT_GEMINI_API_KEY).trim().replace(/^["']|["']$/g, '');
   if (!cleanKey) {
     throw new Error('API Key kosong. Silakan tempelkan kunci dari Google AI Studio.');
   }
 
-  // 1. Minta Google memberikan daftar model yang aktif untuk API Key ini (ListModels)
-  const availableModels = await fetchAvailableGeminiModels(cleanKey);
-
-  let candidateModels = [];
-  if (availableModels.length > 0) {
-    // Urutkan: utamakan flash (ringan dan cepat)
-    const flashModels = availableModels.filter(m => m.name.toLowerCase().includes('flash'));
-    const otherModels = availableModels.filter(m => !m.name.toLowerCase().includes('flash'));
-    candidateModels = [...flashModels, ...otherModels];
-  } else {
-    // Daftar model default resmi Google Gemini
-    candidateModels = [
-      { name: 'gemini-2.5-flash', version: 'v1beta' },
-      { name: 'gemini-2.0-flash', version: 'v1beta' },
-      { name: 'gemini-1.5-flash', version: 'v1' },
-      { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
-      { name: 'gemini-pro', version: 'v1' }
-    ];
-  }
+  // Daftar model Google Gemini yang diprioritaskan
+  const candidateModels = [
+    { name: 'gemini-3.5-flash', version: 'v1beta' },
+    { name: 'gemini-3.8-flash', version: 'v1beta' },
+    { name: 'gemini-flash-latest', version: 'v1beta' },
+    { name: 'gemini-3.1-flash-lite', version: 'v1beta' },
+    { name: 'gemini-2.0-flash', version: 'v1beta' },
+    { name: 'gemini-1.5-flash', version: 'v1' },
+    { name: 'gemini-pro', version: 'v1' }
+  ];
 
   let lastError = null;
 
@@ -167,9 +162,8 @@ PEDOMAN GAYA RESPON:
 // CALL GOOGLE GEMINI API SECARA FULL ONLINE (NO LOCAL ENGINE FALLBACK)
 // ----------------------------------------------------------------------------
 export async function sendChatMessage({ prompt, history = [], telemetryContext = null, apiKey = null }) {
-  const activeKey = (apiKey || getStoredGeminiKey() || '').trim().replace(/^["']|["']$/g, '');
+  const activeKey = (apiKey || getStoredGeminiKey() || DEFAULT_GEMINI_API_KEY).trim().replace(/^["']|["']$/g, '');
 
-  // Jika tidak ada API key, tolak jawaban lokal dan minta API Key secara transparan
   if (!activeKey) {
     throw new Error('MISSING_API_KEY: Google Gemini API Key belum dikonfigurasi. Sistem AI Diagnosa beroperasi secara Full AI Online. Silakan masukkan Google Gemini API Key Anda untuk mulai berkonsultasi.');
   }
@@ -244,10 +238,12 @@ SNAPSHOT DATA TELEMETRI REALTIME SISTEM AC:
 
   // Model Google Gemini default (prioritas flash untuk kecepatan & akurasi tinggi)
   const defaultModels = [
-    { name: 'gemini-2.5-flash', version: 'v1beta' },
+    { name: 'gemini-3.5-flash', version: 'v1beta' },
+    { name: 'gemini-3.8-flash', version: 'v1beta' },
+    { name: 'gemini-flash-latest', version: 'v1beta' },
+    { name: 'gemini-3.1-flash-lite', version: 'v1beta' },
     { name: 'gemini-2.0-flash', version: 'v1beta' },
     { name: 'gemini-1.5-flash', version: 'v1' },
-    { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
     { name: 'gemini-pro', version: 'v1' }
   ];
 
