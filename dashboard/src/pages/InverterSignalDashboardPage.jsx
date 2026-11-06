@@ -24,7 +24,6 @@ import {
   ReferenceLine 
 } from 'recharts';
 import { 
-  Radio, 
   Zap, 
   Thermometer, 
   Droplets, 
@@ -531,47 +530,6 @@ export default function InverterSignalDashboardPage() {
 
   return (
     <div className="space-y-6">
-
-      {/* ── 1. BANNER PROTOKOL KABEL DATA TERMINAL 3 ─────────────────── */}
-      <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-600 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-900/30 border border-cyan-400/40">
-            <Radio className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-base sm:text-lg font-black font-mono text-white tracking-wide">
-                {sig.model_name}
-              </h1>
-              <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-600/40 text-[10px] font-mono font-bold">
-                TERMINAL 3 SNIFFER
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600/40 text-[10px] font-mono font-bold flex items-center space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span>{sig.signal_status}</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Data digital diambil langsung dari kabel serial komunikasi Indoor-Outdoor melalui isolasi optocoupler 220V.
-            </p>
-          </div>
-        </div>
-
-        {/* Quick Mode & Error Indicator */}
-        <div className="flex items-center space-x-2.5 self-start md:self-auto font-mono text-xs">
-          <div className="bg-industrial-950 px-3 py-1.5 rounded-lg border border-industrial-800">
-            <span className="text-slate-500 text-[10px] block">OPERATING MODE</span>
-            <span className="text-cyan-400 font-bold">{sig.operating_mode} (Target: {sig.target_temp_c}°C)</span>
-          </div>
-
-          <div className="bg-industrial-950 px-3 py-1.5 rounded-lg border border-industrial-800">
-            <span className="text-slate-500 text-[10px] block">ERROR CODE</span>
-            <span className={sig.error_code === '00' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-              {sig.error_code === '00' ? '00: NORMAL' : `ERR: ${sig.error_code}`}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* ── 2. GRAFIK UTAMA 4-PARAMETER TERPADU ────────────────────── */}
       <div className="bg-industrial-900 border border-industrial-800 rounded-xl p-4 sm:p-5 shadow-lg space-y-4">
