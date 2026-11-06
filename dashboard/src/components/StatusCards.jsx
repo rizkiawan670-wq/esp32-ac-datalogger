@@ -151,9 +151,6 @@ export default function StatusCards() {
             <Zap className="w-4 h-4 mr-1.5 text-electric-amber" />
             Tegangan AC (RMS)
           </span>
-          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold ${voltageStatus.bgColor} ${voltageStatus.color} ${voltageStatus.borderColor}`}>
-            {voltageStatus.label}
-          </span>
         </div>
 
         <div className="mt-2 flex items-baseline justify-between">
@@ -188,9 +185,6 @@ export default function StatusCards() {
             <Thermometer className="w-4 h-4 mr-1.5 text-electric-red" />
             Suhu Udara AC
           </span>
-          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full bg-industrial-950 border border-industrial-800 font-semibold ${tempColor}`}>
-            {tempStatus}
-          </span>
         </div>
 
         <div className="mt-2 flex items-baseline space-x-1">
@@ -219,9 +213,6 @@ export default function StatusCards() {
             <Droplets className="w-4 h-4 mr-1.5 text-electric-cyan" />
             Kelembapan Relatif
           </span>
-          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full bg-industrial-950 border border-industrial-800 font-semibold ${humColor}`}>
-            {humStatus}
-          </span>
         </div>
 
         <div className="mt-2 flex items-baseline space-x-1">
@@ -249,9 +240,6 @@ export default function StatusCards() {
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center">
             <Wind className="w-4 h-4 mr-1.5 text-cyan-400" />
             Titik Embun (Dew Point)
-          </span>
-          <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold ${dewStatus.bgColor} ${dewStatus.color} ${dewStatus.borderColor}`}>
-            {dewStatus.label}
           </span>
         </div>
 

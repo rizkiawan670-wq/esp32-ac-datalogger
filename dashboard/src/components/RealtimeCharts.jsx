@@ -322,66 +322,12 @@ export default function RealtimeCharts() {
     return finalResult;
   }, [realtimeBuffer, historicalAcData, timeFilter]);
 
-  // --------------------------------------------------------------------------
-  // STATISTIK RINGKAS KELISTRIKAN & TERMAL PADA HEADER GRAFIK
-  // --------------------------------------------------------------------------
-  const summaryStats = useMemo(() => {
-    let minV = Infinity, maxV = 0, sumV = 0, countV = 0;
-    let sumT = 0, countT = 0;
-    let sumH = 0, countH = 0;
-
-    chartData.forEach((pt) => {
-      if (pt.voltage !== null && !isNaN(pt.voltage) && pt.voltage > 10) {
-        countV++;
-        sumV += pt.voltage;
-        if (pt.voltage < minV) minV = pt.voltage;
-        if (pt.voltage > maxV) maxV = pt.voltage;
-      }
-      if (pt.temperature !== null && !isNaN(pt.temperature)) {
-        countT++;
-        sumT += pt.temperature;
-      }
-      if (pt.humidity !== null && !isNaN(pt.humidity)) {
-        countH++;
-        sumH += pt.humidity;
-      }
-    });
-
-    const lastPt = chartData.length > 0 ? chartData[chartData.length - 1] : null;
-    const curV = lastPt?.voltage ?? null;
-    const curT = lastPt?.temperature ?? null;
-    const curH = lastPt?.humidity ?? null;
-    const curDp = calculateDewPoint(curT, curH);
-
-    return {
-      currentVoltage: curV,
-      minVoltage: minV === Infinity ? 0 : minV,
-      maxVoltage: maxV,
-      avgVoltage: countV > 0 ? (sumV / countV) : 0,
-      currentTemp: curT,
-      avgTemp: countT > 0 ? (sumT / countT) : 0,
-      currentHumidity: curH,
-      avgHumidity: countH > 0 ? (sumH / countH) : 0,
-      currentDewPoint: curDp,
-      count: chartData.length
-    };
-  }, [chartData]);
 
   return (
     <div className="bg-industrial-900 border-y sm:border border-industrial-800 sm:rounded-xl -mx-4 sm:mx-0 p-2.5 sm:p-5 shadow-lg space-y-3.5 sm:space-y-4 overflow-hidden">
       
-      {/* 1. HEADER GRAFIK UTAMA: Identitas, Kontrol Waktu & Aksi */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-4 border-b border-industrial-800 gap-4">
-        
-        {/* Identitas Grafik Utama */}
-        <div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 rounded-full bg-electric-amber animate-pulse"></div>
-            <h2 className="text-base font-bold text-white font-mono tracking-wide flex items-center gap-2">
-              GRAFIK MONITORING TERPADU — TEGANGAN AC & IKLIM RUANGAN
-            </h2>
-          </div>
-        </div>
+      {/* 1. KONTROL WAKTU & AKSI GRAFIK */}
+      <div className="flex flex-wrap items-center justify-end pb-3 border-b border-industrial-800 gap-3">
 
         {/* Filter Rentang Waktu Terpadu */}
         <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-center">
@@ -477,72 +423,7 @@ export default function RealtimeCharts() {
         </div>
       )}
 
-      {/* 2. STATISTIK RINGKAS PARAMETER KELISTRIKAN & TERMAL */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1">
-        
-        {/* Tegangan Saat Ini */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">TEGANGAN AKTUAL</span>
-          <span className="text-lg font-black font-mono text-electric-amber">
-            {summaryStats.currentVoltage !== null ? `${summaryStats.currentVoltage.toFixed(1)} V` : '--.- V'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            Status: <strong className={summaryStats.currentVoltage >= settings.voltageLow && summaryStats.currentVoltage <= settings.voltageHigh ? 'text-emerald-400' : 'text-rose-400'}>
-              {summaryStats.currentVoltage ? (summaryStats.currentVoltage >= settings.voltageLow && summaryStats.currentVoltage <= settings.voltageHigh ? 'NORMAL' : 'ANOMALI') : 'WAIT'}
-            </strong>
-          </span>
-        </div>
 
-        {/* Tegangan Rata-Rata */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">TEGANGAN RERATA</span>
-          <span className="text-base font-bold font-mono text-white">
-            {summaryStats.avgVoltage > 0 ? `${summaryStats.avgVoltage.toFixed(1)} VAC` : '--.- VAC'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">Beban Sesi</span>
-        </div>
-
-        {/* Rentang Tegangan Min / Max */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">VOLTAGE MIN / MAX</span>
-          <span className="text-xs font-bold font-mono text-slate-200">
-            {summaryStats.minVoltage > 0 ? `${summaryStats.minVoltage.toFixed(1)}V` : '--'} / {summaryStats.maxVoltage > 0 ? `${summaryStats.maxVoltage.toFixed(1)}V` : '--'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">Fluktuasi Jala PLN</span>
-        </div>
-
-        {/* Suhu Udara Saat Ini */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">SUHU UDARA AC</span>
-          <span className="text-base font-bold font-mono text-rose-400">
-            {summaryStats.currentTemp !== null ? `${summaryStats.currentTemp.toFixed(1)} °C` : '--.- °C'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            Rerata: {summaryStats.avgTemp > 0 ? `${summaryStats.avgTemp.toFixed(1)}°C` : '--'}
-          </span>
-        </div>
-
-        {/* Kelembapan Saat Ini */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">KELEMBAPAN RELATIF</span>
-          <span className="text-base font-bold font-mono text-cyan-400">
-            {summaryStats.currentHumidity !== null ? `${summaryStats.currentHumidity.toFixed(1)} %RH` : '--.- %RH'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">
-            Rerata: {summaryStats.avgHumidity > 0 ? `${summaryStats.avgHumidity.toFixed(1)}%` : '--'}
-          </span>
-        </div>
-
-        {/* Titik Embun Saat Ini */}
-        <div className="bg-industrial-950 p-2.5 rounded-lg border border-industrial-800 flex flex-col justify-between">
-          <span className="text-[10px] text-slate-400 font-mono">TITIK EMBUN (DEW PT)</span>
-          <span className="text-base font-bold font-mono text-emerald-400">
-            {summaryStats.currentDewPoint !== null ? `${summaryStats.currentDewPoint.toFixed(1)} °C` : '--.- °C'}
-          </span>
-          <span className="text-[10px] text-slate-500 font-mono">Kondensasi Termal</span>
-        </div>
-
-      </div>
 
       {/* 3. LEGEND INTERAKTIF: ON/OFF SERI DATA */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-lg bg-industrial-950 border border-industrial-850 text-xs font-mono">
