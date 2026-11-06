@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "ESP32 AC Datalogger Online Project Workspace",
+  "workspaces": [
+    "dashboard"
+  ],
   "scripts": {
     "dev": "npm --prefix dashboard run dev",
-    "build": "npm --prefix dashboard run build",
+    "build": "npm --prefix dashboard install && npm --prefix dashboard run build",
     "preview": "npm --prefix dashboard run preview"
   }
 }
