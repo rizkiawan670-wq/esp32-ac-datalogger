@@ -381,9 +381,6 @@ export default function RealtimeCharts() {
               GRAFIK MONITORING TERPADU — TEGANGAN AC & IKLIM RUANGAN
             </h2>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Visualisasi simultan Tegangan AC True-RMS (ZMPT101B), Suhu Udara, dan Kelembapan Relatif (SHT31).
-          </p>
         </div>
 
         {/* Filter Rentang Waktu Terpadu */}
