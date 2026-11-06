@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "npm --prefix dashboard run dev",
-    "build": "npm --prefix dashboard install && npm --prefix dashboard run build",
+    "build": "npm --prefix dashboard install && npm --prefix dashboard run build && node -e \"const fs = require('fs'); try { fs.cpSync('dashboard/dist', 'dist', {recursive: true, force: true}); } catch(e){}\"",
     "preview": "npm --prefix dashboard run preview"
   }
 }
